@@ -83,6 +83,11 @@ jobs:
             target: android-tv
             arch: x86_64
             profile: tv_1080p
+    env:
+      CI_AVD_NAME: ottplay-${{ matrix.device }}
+      CI_AVD_PROFILE: ${{ matrix.profile }}
+      CI_SYSTEM_IMAGE: system-images;android-${{ matrix.api }};${{ matrix.target }};${{ matrix.arch }}
+      CI_EMULATOR_DIAGNOSTICS: app/build/reports/emulator
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,23 +106,32 @@ jobs:
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
       - name: Install compile SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - name: Install emulator and system image
+        run: sdkmanager "emulator" "$CI_SYSTEM_IMAGE"
       - name: Enable KVM for the ephemeral emulator runner
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Boot emulator and wait for Android services
+        env:
+          ANDROID_AVD_HOME: ${{ runner.temp }}/ottplay-avd
+        run: bash scripts/ci-start-emulator.sh
       - name: Run instrumented tests
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2, resolved 2026-09-13
-        with:
-          api-level: ${{ matrix.api }}
-          target: ${{ matrix.target }}
-          arch: ${{ matrix.arch }}
-          profile: ${{ matrix.profile }}
-          avd-name: ottplay-${{ matrix.device }}
-          disk-size: 2048M
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
-          script: ./gradlew --no-daemon --stacktrace :app:connectedDebugAndroidTest
+        run: ./gradlew --no-daemon --stacktrace :app:connectedDebugAndroidTest
+      - name: Collect emulator diagnostics and stop emulator
+        if: always()
+        run: |
+          mkdir -p "$CI_EMULATOR_DIAGNOSTICS"
+          timeout 15s adb devices -l > "$CI_EMULATOR_DIAGNOSTICS/adb-devices.txt" 2>&1 || true
+          timeout 20s adb -s emulator-5554 logcat -d > "$CI_EMULATOR_DIAGNOSTICS/logcat.txt" 2>&1 || true
+          timeout 10s adb -s emulator-5554 emu kill || true
+          if [[ -f "$CI_EMULATOR_DIAGNOSTICS/emulator.pid" ]]; then
+            emulator_pid=$(cat "$CI_EMULATOR_DIAGNOSTICS/emulator.pid")
+            if [[ "$emulator_pid" =~ ^[0-9]+$ ]]; then
+              kill "$emulator_pid" 2>/dev/null || true
+            fi
+          fi
       - name: Upload instrumented test reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -126,5 +140,6 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+            ${{ env.CI_EMULATOR_DIAGNOSTICS }}/
           if-no-files-found: warn
           retention-days: 14

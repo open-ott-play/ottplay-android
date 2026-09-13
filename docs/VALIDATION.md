@@ -19,8 +19,8 @@ The instrumented checks use the real Android runtime:
 - A 3,000-entry catalogue is stored in 24 encrypted blocks; failure during the next refresh rolls back blocks already written. One debug-emulator measurement recorded a 450 ms write and a 382 ms read. This is not a physical set-top box performance estimate.
 - Android SAX: XMLTV, gzip, timezones and rejection of DOCTYPE/external entities.
 - Real ExoPlayer, SurfaceView and MP4 decoding; Activity/controller destruction, reconnection to the same player, and pause/resume/stop.
-- HLS master/media manifests and TS segments from a loopback HTTP server; separate Authorization headers for streams A/B, decoding A -> B -> A.
-- Compose onboarding, demo selection, returning from the player, the source editor and D-pad/focus in a TV configuration. This last local check by itself does not constitute a run on TV OS.
+- HLS master/media manifests and TS segments from a loopback HTTP server; different Authorization headers for streams A/B and switching A → B → A. Tests check for errors, video dimensions and advancing position; they do not separately assert that the first frame was rendered. A visible frame was checked separately in the installed app below.
+- Compose onboarding, demo selection, returning from the player, source editing and D-pad/focus under a TV configuration. UI tests use controlled state; the TV test explicitly sets initial focus and checks menu navigation. Initial focus after a cold launch and every remote key in the real PlayerView were not separately tested. This local check alone is not an Android TV OS run.
 
 ## App verification through the system interface
 
@@ -32,6 +32,8 @@ The optimized release APK was built with R8 and resource shrinking. A separate i
 
 ## GitHub and validation limits
 
-[The first complete workflow](https://github.com/open-ott-play/ottplay-android/actions/runs/34742174407) successfully completed Linux host checks and built the APK. Both emulator jobs stopped before the tests started: Android Emulator required 7372,80 MB for userdata, while the runner had 6836,73 MB remaining for the phone and 2072,44 MB for TV. This is not an instrumentation test result. For the rerun, userdata size has been capped and unused Android NDK/CMake installations have been removed from the temporary runner to free space. Results for phone API 35 and actual TV API 36 will be recorded from the rerun reports.
+The [first full workflow](https://github.com/open-ott-play/ottplay-android/actions/runs/34742174407) passed Linux host checks and built the APK. Both emulator jobs stopped before testing: Android Emulator required 7372.80 MB for userdata, but only 6836.73 MB remained for the phone and 2072.44 MB for TV. This was not an instrumented test result. The retry bounded userdata size and removed unused Android NDK/CMake installations from the temporary runner.
+
+The [next run](https://github.com/open-ott-play/ottplay-android/actions/runs/34743274687) confirmed 44 passing JVM tests and all 11 instrumented tests on phone API 35. Android TV API 36 booted in 61.6 seconds, but the third-party emulator runner stopped on an immediate `input keyevent 82` command with exit code 255 before Gradle started. For the final matrix, emulator startup was split into image installation, Android readiness checks and test execution; test failures themselves are not suppressed.
 
 Physical televisions, set-top boxes and phones; real user IPTV accounts; DRM; hardware HEVC/AC3 paths; HDMI/audio passthrough; and store certification were not tested. Successful H264/AAC playback does not establish those cases. Proprietary adapters from the original app are not claimed as ported; [MIGRATION.md](MIGRATION.md) defines the migration scope.
