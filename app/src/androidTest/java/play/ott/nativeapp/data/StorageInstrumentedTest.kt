@@ -271,10 +271,27 @@ class StorageInstrumentedTest {
         }
     }
 
+    @Test fun legacyCredentialCatalogRefreshPreservesStoredRowsUntilReplacement() {
+        val db = CatalogDatabase(storage, vault)
+        try {
+            val legacy = entry(sourceA.id).copy(headerOrigins = null)
+            db.replace(sourceA.id, Catalog(listOf(legacy)))
+            assertTrue(db.read(sourceA.id).entries.isEmpty())
+            db.readableDatabase.rawQuery("SELECT count(*) FROM entries WHERE source_id=?", arrayOf(sourceA.id)).use {
+                assertTrue(it.moveToFirst())
+                assertEquals(1, it.getInt(0))
+            }
+            val refreshed = Catalog(listOf(entry(sourceA.id)))
+            db.replace(sourceA.id, refreshed)
+            assertEquals(refreshed, db.read(sourceA.id))
+        } finally { db.close() }
+    }
+
     private fun entry(sourceId: String) = MediaEntry(
         id = "same-id-in-both-sources", sourceId = sourceId, name = "channel", epgId = "channel",
         url = "https://stream.invalid/live?password=secret-stream-token-5829",
         headers = mapOf("Authorization" to "Bearer secret-header-2631"),
+        headerOrigins = mapOf("authorization" to "https://stream.invalid/"),
     )
 
     private fun assertNoPlaintextCredentials() {

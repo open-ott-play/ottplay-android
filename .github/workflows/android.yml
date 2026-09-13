@@ -40,8 +40,10 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -m unittest discover -s scripts/tests -v
+      - name: Validate Play listing assets
+        run: python3 scripts/validate-store-assets.py --require-screenshots
       - name: Test, lint and assemble
-        run: ./gradlew --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:assembleDebugAndroidTest
+        run: ./gradlew --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:assembleFull :app:assembleDebugAndroidTest
       - name: Upload debug APK and unsigned release APK/AAB
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -50,6 +52,7 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/release/app-release-unsigned.apk
             app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/apk/full/app-full-unsigned.apk
           if-no-files-found: error
           retention-days: 14
       - name: Upload test and lint reports
@@ -63,12 +66,13 @@ jobs:
             app/build/reports/tests/
             app/build/test-results/
             app/build/reports/lint-results-debug.*
+            app/build/reports/lint-results-release.*
           if-no-files-found: warn
           retention-days: 14
 
   emulator:
     name: Instrumented tests · ${{ matrix.device }}
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_device_tests }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' || inputs.run_device_tests }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 35

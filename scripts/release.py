@@ -69,7 +69,7 @@ def preflight(info, repository):
     runs = gh(f"repos/{repository}/actions/workflows/android.yml/runs?head_sha={info['commit']}&status=success&per_page=100")["workflow_runs"]
     required = {"Unit tests, lint and APKs", "Instrumented tests · phone-api35", "Instrumented tests · androidtv-api36"}
     for candidate in runs:
-        if candidate["event"] != "workflow_dispatch":
+        if candidate["event"] not in {"push", "workflow_dispatch"}:
             continue
         jobs = gh(f"repos/{repository}/actions/runs/{candidate['id']}/jobs?per_page=100")["jobs"]
         if required <= {job["name"] for job in jobs if job["conclusion"] == "success"}:

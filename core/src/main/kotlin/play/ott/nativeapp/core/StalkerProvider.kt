@@ -110,7 +110,8 @@ internal class StalkerProvider(private val http: ProviderHttp) {
                     entries[key] = MediaEntry(key, config.id, channel.string("name").ifBlank { "Channel $id" }, cmd,
                         group = genres[channel.string("tv_genre_id")].orEmpty().ifBlank { channel.string("genre") }.ifBlank { "Other" },
                         logo = resolveHttp(endpoint(config).toString(), channel.string("logo")),
-                        epgId = channel.string("xmltv_id").ifBlank { id }, headers = config.headers, providerId = id)
+                        epgId = channel.string("xmltv_id").ifBlank { id }, headers = config.headers, providerId = id,
+                        headerOrigins = headerOrigins(config.headers, config.url))
                 }
             }
             if (expectedTotal != null && entries.size >= expectedTotal) break
@@ -160,7 +161,8 @@ internal class StalkerProvider(private val http: ProviderHttp) {
             MediaEntry(stableId(config.id, "stalker", id), config.id, channel.string("name").ifBlank { "Channel $id" }, url,
                 group = rpcCategory(channel),
                 logo = resolveHttp(config.url, channel.string("logo").ifBlank { channel.string("icon") }.ifBlank { channel.string("tv_icon") }),
-                epgId = channel.string("xmltv_id").ifBlank { id }, headers = config.headers, providerId = id)
+                epgId = channel.string("xmltv_id").ifBlank { id }, headers = config.headers, providerId = id,
+                headerOrigins = headerOrigins(config.headers, config.url))
         }
         return Catalog(entries, epgUrls(config))
     }

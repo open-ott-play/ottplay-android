@@ -47,9 +47,12 @@ internal data class HttpPayload(val bytes: ByteArray, val url: String, val conte
     fun text(): String = bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF")
 }
 
-internal class ProviderHttp(client: OkHttpClient) {
+internal class ProviderHttp(client: OkHttpClient, private val transportPolicy: RemoteTransportPolicy) {
     // Redirects are inspected explicitly so custom authentication headers cannot leak to a CDN.
-    private val http = client.newBuilder().followRedirects(false).followSslRedirects(false).build()
+    private val http = transportPolicy.secure(client).newBuilder().followRedirects(false).followSslRedirects(false).build()
+
+    fun checkedUrl(value: String): HttpUrl = try { transportPolicy.requireHttpUrl(value) }
+        catch (error: IllegalArgumentException) { throw ProviderException(error.message ?: "Invalid source address") }
 
     suspend fun get(url: String, headers: Map<String, String> = emptyMap(), limit: Int = MAX_CATALOG_BYTES): HttpPayload =
         request(url, headers, null, limit)
@@ -58,7 +61,7 @@ internal class ProviderHttp(client: OkHttpClient) {
         request(url, headers, json, MAX_CATALOG_BYTES)
 
     private suspend fun request(initialUrl: String, initialHeaders: Map<String, String>, json: String?, limit: Int): HttpPayload {
-        var url = httpUrl(initialUrl)
+        var url = checkedUrl(initialUrl)
         var headers = mergedHeaders(mapOf("User-Agent" to "OTTPlayNative/0.1"), initialHeaders)
         var body = json
         repeat(6) { attempt ->
@@ -71,7 +74,8 @@ internal class ProviderHttp(client: OkHttpClient) {
                 return HttpPayload(result.bytes, url.toString(), result.contentType)
             }
             if (attempt == 5) throw ProviderException("Too many source redirects")
-            val next = result.location?.let(url::resolve) ?: throw ProviderException("Invalid source redirect")
+            val next = result.location?.let(url::resolve)?.let { checkedUrl(it.toString()) }
+                ?: throw ProviderException("Invalid source redirect")
             val sameOrigin = next.scheme == url.scheme && next.host == url.host && next.port == url.port
             if (!sameOrigin) {
                 if (body != null) throw ProviderException("Portal redirected a credential request to another server")

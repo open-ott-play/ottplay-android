@@ -12,6 +12,10 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.util.Locale
+import play.ott.nativeapp.AppTransportPolicy
+import play.ott.nativeapp.core.RemoteTransportPolicy
 
 /**
  * A new HTTP factory for each source. HLS manifests, segments and keys (and DASH resources)
@@ -19,7 +23,12 @@ import okhttp3.OkHttpClient
  * Sharing one mutable setDefaultRequestProperties across the playlist would leak credentials.
  */
 @UnstableApi
-internal class ItemMediaSourceFactory(context: Context, private val client: OkHttpClient) : MediaSource.Factory {
+internal class ItemMediaSourceFactory(
+    context: Context,
+    client: OkHttpClient,
+    private val transportPolicy: RemoteTransportPolicy = AppTransportPolicy.current,
+) : MediaSource.Factory {
+    private val client = transportPolicy.secure(client)
     private val context = context.applicationContext
     private var drmProvider: DrmSessionManagerProvider? = null
     private var errorPolicy: LoadErrorHandlingPolicy? = null
@@ -38,16 +47,34 @@ internal class ItemMediaSourceFactory(context: Context, private val client: OkHt
                 .setMultiSession(config.multiSession)
                 .setPlayClearSamplesWithoutKeys(false)
             errorPolicy?.let(builder::setLoadErrorHandlingPolicy)
-            val manager = builder.build(ScopedDrmCallback(config, client))
+            val manager = builder.build(ScopedDrmCallback(config, client, transportPolicy))
             factory.setDrmSessionManagerProvider { manager }
         }
         errorPolicy?.let(factory::setLoadErrorHandlingPolicy)
         return factory.createMediaSource(resolved)
     }
 
-    internal fun httpFactoryFor(item: MediaItem): OkHttpDataSource.Factory = OkHttpDataSource.Factory(client)
-        .setUserAgent("OTT-play-Android/1.0")
-        .setDefaultRequestProperties(PlaybackItems.headers(item))
+    internal fun httpFactoryFor(item: MediaItem): OkHttpDataSource.Factory {
+        val headers = PlaybackItems.headers(item)
+        val source = (item.localConfiguration?.uri ?: item.requestMetadata.mediaUri)?.toString()?.toHttpUrlOrNull()
+        val privateHeaderNames = headers.keys.filter { it.lowercase(Locale.ROOT) !in PUBLIC_HEADERS }
+        val scopedClient = client.newBuilder().addNetworkInterceptor { chain ->
+            val request = chain.request()
+            val target = request.url
+            val sameOrigin = source != null && source.scheme == target.scheme &&
+                source.host == target.host && source.port == target.port
+            // Manifests can name CDN resources directly, and OkHttp may follow redirects.
+            // A network interceptor checks both against the original item's origin, without
+            // putting credentials back if a redirect already stripped them on an earlier hop.
+            val scopedRequest = if (sameOrigin) request else request.newBuilder().apply {
+                privateHeaderNames.forEach(::removeHeader)
+            }.build()
+            chain.proceed(scopedRequest)
+        }.build()
+        return OkHttpDataSource.Factory(scopedClient)
+            .setUserAgent("OTT-play-Android/1.0")
+            .setDefaultRequestProperties(headers)
+    }
 
     override fun getSupportedTypes(): IntArray = DefaultMediaSourceFactory(context).supportedTypes
 
@@ -58,4 +85,6 @@ internal class ItemMediaSourceFactory(context: Context, private val client: OkHt
     override fun setLoadErrorHandlingPolicy(loadErrorHandlingPolicy: LoadErrorHandlingPolicy): MediaSource.Factory = apply {
         errorPolicy = loadErrorHandlingPolicy
     }
+
+    private companion object { val PUBLIC_HEADERS = setOf("user-agent", "accept", "accept-language") }
 }

@@ -2,7 +2,6 @@ package play.ott.nativeapp.playback
 
 import android.app.Activity
 import android.content.ComponentName
-import android.content.Intent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.FrameLayout
@@ -54,8 +53,7 @@ class ClearKeyPlaybackInstrumentedTest {
         PlaybackTestLifecycle.finishPreviousPlayback()
         val preferences = (context.applicationContext as OttplayApplication).repository.preferences
         val previousPreferences = runBlocking { preferences.data.first() }
-        val activity = instrumentation.startActivitySync(requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val activity = instrumentation.startActivitySync(PlaybackTestLifecycle.launchIntent())
         var controller: MediaController? = null
         ClearKeyServer().use { server ->
             try {

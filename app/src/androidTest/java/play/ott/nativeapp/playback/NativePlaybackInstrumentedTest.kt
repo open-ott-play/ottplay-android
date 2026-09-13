@@ -2,7 +2,7 @@ package play.ott.nativeapp.playback
 
 import android.app.Activity
 import android.content.ComponentName
-import android.content.Intent
+import android.content.res.Configuration
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.FrameLayout
@@ -31,13 +31,13 @@ import play.ott.nativeapp.OttplayApplication
 class NativePlaybackInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
+    private val isTv get() = context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
 
-    @Test fun decoderContinuesAfterControllerReleaseAndReconnectsUntilExplicitStop() {
+    @Test fun sessionSurvivesControllerReleaseAndRestoresPlaybackUntilExplicitStop() {
         PlaybackTestLifecycle.finishPreviousPlayback()
         val preferences = (context.applicationContext as OttplayApplication).repository.preferences
         val previousPreferences = runBlocking { preferences.data.first() }
-        val launch = requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val launch = PlaybackTestLifecycle.launchIntent()
         var activity = instrumentation.startActivitySync(launch)
         var first: MediaController? = null
         var second: MediaController? = null
@@ -60,6 +60,7 @@ class NativePlaybackInstrumentedTest {
             awaitPlayer("Local video did not decode", original) {
                 it.isPlaying && it.currentPosition > 100 && it.videoSize.width > 0 && it.playerError == null
             }
+            // Activity.finish applies the TV pause policy; controller release itself leaves the session intact.
             onMain { original.clearVideoSurface(); original.release() }
             first = null
             onMain { activity.finish() }
@@ -68,8 +69,16 @@ class NativePlaybackInstrumentedTest {
             // A fresh controller attaches to the existing decoder/session, without setMediaItem.
             second = connect()
             val replacement = requireNotNull(second)
-            awaitPlayer("Controller release terminated service playback", replacement) {
-                it.currentMediaItem?.mediaId == "instrumentation-synthetic-demo" && it.isPlaying
+            awaitPlayer("Controller reconnection lost the session or its platform playback state", replacement) {
+                it.currentMediaItem?.mediaId == "instrumentation-synthetic-demo" &&
+                    (if (isTv) !it.playWhenReady else it.isPlaying)
+            }
+            if (isTv) {
+                // No Activity or Activity player listener remains. The service must reject hidden Play itself.
+                onMain { replacement.play() }
+                awaitPlayer("A new controller must not restart TV video after Activity destruction", replacement) {
+                    !it.playWhenReady && !it.isPlaying && it.currentMediaItem?.mediaId == "instrumentation-synthetic-demo"
+                }
             }
             // There is no Activity or ViewModel now. The service must persist this seek/pause.
             onMain { replacement.pause(); replacement.seekTo(2_000) }

@@ -59,8 +59,8 @@ internal fun PlaybackOptionsDialog(
     val canChangeTracks = controller?.isCommandAvailable(Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS) == true
     val audioAvailable = remember(controller, revision) { controller?.currentTracks?.isTypeSupported(C.TRACK_TYPE_AUDIO) == true }
     val subtitlesAvailable = remember(controller, revision) { controller?.currentTracks?.isTypeSupported(C.TRACK_TYPE_TEXT) == true }
-    val supportsPip = LocalContext.current.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
     val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+    val supportsPip = !isTv && LocalContext.current.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
     val initialFocus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -97,7 +97,7 @@ internal fun PlaybackOptionsDialog(
                         ActionButton(label, { onResize(mode); onDismiss() }, Modifier.fillMaxWidth().testTag("player-scale-$mode")
                             .then(if (!canChangeSpeed && mode == AspectRatioFrameLayout.RESIZE_MODE_FIT) Modifier.focusRequester(initialFocus) else Modifier), selected = resizeMode == mode)
                     }
-                    if (supportsPip) ActionButton("Картинка в картинке", { onDismiss(); onPictureInPicture() }, Modifier.fillMaxWidth())
+                    if (supportsPip) ActionButton("Картинка в картинке", { onDismiss(); onPictureInPicture() }, Modifier.fillMaxWidth().testTag("player-pip"))
                     ActionButton("Закрыть плеер", { onDismiss(); onStop() }, Modifier.fillMaxWidth().testTag("player-stop"))
                 }
             }

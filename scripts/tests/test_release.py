@@ -24,7 +24,7 @@ class ReleaseBoundariesTest(unittest.TestCase):
                     baseVersion="0.2.0", applicationId="play.ott.foss.nativeapp.preview",
                     tag="v0.2.0-preview.2", commit="a" * 40)
 
-    def preflight(self, tags=(), jobs=None, dirty=False):
+    def preflight(self, tags=(), jobs=None, dirty=False, event="workflow_dispatch"):
         required = ["Unit tests, lint and APKs", "Instrumented tests · phone-api35", "Instrumented tests · androidtv-api36"]
         def command(*args, **kwargs):
             if args[:3] == ("git", "status", "--porcelain"):
@@ -33,7 +33,7 @@ class ReleaseBoundariesTest(unittest.TestCase):
         def api(path):
             if path.endswith("/jobs?per_page=100"):
                 return {"jobs": jobs if jobs is not None else [dict(name=name, conclusion="success") for name in required]}
-            return {"workflow_runs": [dict(id=42, event="workflow_dispatch", html_url="https://github.com/example/app/actions/runs/42")]}
+            return {"workflow_runs": [dict(id=42, event=event, html_url="https://github.com/example/app/actions/runs/42")]}
         with patch.object(release, "run", side_effect=command), patch.object(release, "gh", side_effect=api), patch.dict(os.environ, {}, clear=True):
             info = self.info()
             release.preflight(info, "example/app")
@@ -61,6 +61,11 @@ class ReleaseBoundariesTest(unittest.TestCase):
 
     def test_prior_preview_and_current_full_matrix_are_accepted(self):
         self.assertIn("validatedRun", self.preflight(tags=["v0.1.0-preview.1"]))
+
+    def test_push_full_matrix_is_accepted_but_pull_request_cannot_authorize_release(self):
+        self.assertIn("validatedRun", self.preflight(event="push"))
+        with self.assertRaisesRegex(ValueError, "No successful host"):
+            self.preflight(event="pull_request")
 
     def test_production_does_not_fall_back_to_preview_secret_values(self):
         with tempfile.TemporaryDirectory() as directory:

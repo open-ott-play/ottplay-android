@@ -41,7 +41,7 @@ object CatchupResolver {
         // Unknown templates must never fall back to live playback while the UI says "archive".
         if (Regex("\\$?\\{[^}]+}").containsMatchIn(substituted)) return null
         val url = resolveHttp(entry.url, substituted).takeIf(String::isNotBlank) ?: return null
-        return PlaybackStream(url, entry.headers, inferMimeType(url))
+        return PlaybackStream(url, scopedHeaders(entry.headers, entry.headerOrigins, url), inferMimeType(url))
     }
 
     private fun flussonic(url: String, start: Long, end: Long, now: Long): String? {

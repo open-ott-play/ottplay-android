@@ -21,11 +21,32 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import play.ott.nativeapp.core.DrmConfig
 import play.ott.nativeapp.core.DrmScheme
+import play.ott.nativeapp.core.RemoteTransportPolicy
 
 @UnstableApi
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = PlaybackTestApplication::class)
 class ScopedDrmCallbackTest {
+    @Test fun `strict DRM rejects cleartext licenses and device supplied provisioning URLs before connecting`() {
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
+            server.soTimeout = 200
+            withClient { client ->
+                val url = "http://127.0.0.1:${server.localPort}/opaque-id"
+                assertThrows(IllegalArgumentException::class.java) {
+                    ScopedDrmCallback(DrmConfig(DrmScheme.WIDEVINE, url,
+                        mapOf("X-License" to "private")), client, RemoteTransportPolicy.HTTPS_ONLY)
+                }
+                val callback = ScopedDrmCallback(DrmConfig(DrmScheme.WIDEVINE,
+                    "https://license.example.test/opaque-id"), client, RemoteTransportPolicy.HTTPS_ONLY)
+                assertThrows(Exception::class.java) {
+                    callback.executeProvisionRequest(C.WIDEVINE_UUID,
+                        ExoMediaDrm.ProvisionRequest("private-device-challenge".toByteArray(), url))
+                }
+                assertThrows(java.net.SocketTimeoutException::class.java) { server.accept().close() }
+            }
+        }
+    }
+
     @Test fun `license POST uses raw challenge and item scoped headers while provisioning receives none`() {
         HttpFixture(List(3) { Reply() }).use { server ->
             withClient { client ->

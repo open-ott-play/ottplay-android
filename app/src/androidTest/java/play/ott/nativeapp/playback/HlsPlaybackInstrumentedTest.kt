@@ -2,7 +2,6 @@ package play.ott.nativeapp.playback
 
 import android.app.Activity
 import android.content.ComponentName
-import android.content.Intent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.FrameLayout
@@ -36,8 +35,7 @@ class HlsPlaybackInstrumentedTest {
     private val context = instrumentation.targetContext
 
     @Test fun hlsPlaylistItemsDecodeWithTheirOwnHeadersAcrossChannelSwitches() {
-        val launch = requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val launch = PlaybackTestLifecycle.launchIntent()
         val activity = instrumentation.startActivitySync(launch)
         var controller: MediaController? = null
         HlsFixtureServer().use { server ->

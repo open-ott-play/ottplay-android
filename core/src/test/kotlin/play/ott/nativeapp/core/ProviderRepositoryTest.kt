@@ -22,6 +22,24 @@ import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 class ProviderRepositoryTest {
+    @Test fun `local playlist has explicit provenance and scopes entry override case insensitively`() = runBlocking {
+        val source = SourceConfig("local", "Local", SourceKind.M3U, "content://documents/list",
+            headers = mapOf("Authorization" to "unbound-source-secret", "Cookie" to "unbound-cookie"))
+        val entry = M3uParser.parse("""
+            #EXTM3U
+            #EXTINF:-1,Channel
+            #EXTHTTP:{"authorization":"explicit-entry-secret"}
+            https://cdn.invalid/live.m3u8
+        """.trimIndent(), source).entries.single()
+        assertFalse(entry.needsHeaderOriginRefresh())
+        assertEquals(mapOf("authorization" to "https://cdn.invalid/"), entry.headerOrigins)
+        assertEquals(mapOf("authorization" to "explicit-entry-secret"), ProviderRepository().resolve(source, entry).headers)
+        val unbound = M3uParser.parse("#EXTM3U\n#EXTINF:-1,Channel\nhttps://cdn.invalid/live.m3u8", source).entries.single()
+        assertFalse(unbound.needsHeaderOriginRefresh())
+        assertEquals(emptyMap(), unbound.headerOrigins)
+        assertEquals(emptyMap(), ProviderRepository().resolve(source, unbound).headers)
+    }
+
     @Test fun `locally imported playlist resolves its absolute stream without treating content URI as HTTP`() = runBlocking {
         val source = SourceConfig("local", "File", SourceKind.M3U, "content://documents/my-list")
         val entry = M3uParser.parse("#EXTM3U\n#EXTINF:-1,One\nhttps://media.example.test/one.m3u8", source).entries.single()
@@ -237,6 +255,9 @@ class ProviderRepositoryTest {
             val request = destination.takeRequest()
             assertNull(request.getHeader("Authorization")); assertNull(request.getHeader("Cookie")); assertNull(request.getHeader("X-Token"))
             assertEquals("My agent", request.getHeader("User-Agent"))
+            val stream = ProviderRepository().resolve(config, catalog.entries.single())
+            assertNull(stream.headers["Authorization"]); assertNull(stream.headers["Cookie"]); assertNull(stream.headers["X-Token"])
+            assertEquals("My agent", stream.headers["User-Agent"])
         } }
     }
 

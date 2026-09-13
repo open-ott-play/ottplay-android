@@ -52,6 +52,8 @@ data class MediaEntry(
     val drm: DrmConfig? = null,
     val mimeType: String? = null,
     val playbackUnsupportedReason: String? = null,
+    /** Lowercase header names mapped to allowed origins; null identifies a legacy snapshot. */
+    val headerOrigins: Map<String, String>? = null,
 ) {
     override fun toString(): String = "MediaEntry(id=$id, sourceId=$sourceId, kind=$kind)"
 }

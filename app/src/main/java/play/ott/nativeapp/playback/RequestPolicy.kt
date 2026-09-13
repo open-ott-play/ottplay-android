@@ -3,12 +3,14 @@ package play.ott.nativeapp.playback
 import java.net.URI
 import java.util.Collections
 import java.util.Locale
+import play.ott.nativeapp.AppTransportPolicy
+import play.ott.nativeapp.core.RemoteTransportPolicy
 
 /** Transport validation without Android dependencies or credential-bearing diagnostics. */
 internal object RequestPolicy {
     private val headerName = Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 
-    fun requireStreamUrl(value: String): String {
+    fun requireStreamUrl(value: String, transportPolicy: RemoteTransportPolicy = AppTransportPolicy.current): String {
         val uri = try { URI(value) } catch (_: Exception) { null }
         val scheme = uri?.scheme?.lowercase(Locale.ROOT)
         val network = scheme in setOf("http", "https") && !uri?.host.isNullOrBlank() && uri?.rawUserInfo == null
@@ -16,6 +18,7 @@ internal object RequestPolicy {
         require(uri != null && (network || local)) {
             "Use an HTTP(S), Android resource or content URL without embedded user information"
         }
+        if (network) transportPolicy.requireHttpUrl(value)
         return value
     }
 

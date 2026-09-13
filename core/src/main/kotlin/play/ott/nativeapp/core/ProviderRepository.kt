@@ -11,8 +11,11 @@ import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.OkHttpClient
 
 /** Network/catalog operations run off the main thread; cancellation cancels the active HTTP call. */
-class ProviderRepository(client: OkHttpClient = ProviderHttp.defaultClient()) {
-    private val http = ProviderHttp(client)
+class ProviderRepository(
+    client: OkHttpClient = ProviderHttp.defaultClient(),
+    transportPolicy: RemoteTransportPolicy = RemoteTransportPolicy.HTTP_COMPATIBLE,
+) {
+    private val http = ProviderHttp(client, transportPolicy)
     private val xtream = XtreamProvider(http)
     private val stalker = StalkerProvider(http)
 
@@ -34,10 +37,12 @@ class ProviderRepository(client: OkHttpClient = ProviderHttp.defaultClient()) {
         if (config.kind != SourceKind.M3U) validate(config)
         if (entry.sourceId != config.id) throw ProviderException("This item belongs to another source")
         if (entry.kind == MediaKind.SERIES) throw ProviderException("Choose an episode before playing a series")
-        if (config.kind == SourceKind.STALKER) stalker.resolve(config, entry) else {
-            val url = httpUrl(entry.url).toString()
-            PlaybackStream(url, mergedHeaders(config.headers, entry.headers), inferMimeType(url))
+        val stream = if (config.kind == SourceKind.STALKER) stalker.resolve(config, entry) else {
+            val url = http.checkedUrl(entry.url).toString()
+            PlaybackStream(url, mimeType = inferMimeType(url))
         }
+        http.checkedUrl(stream.url)
+        stream.copy(headers = playbackHeaders(config, entry, stream.url))
     }
 
     suspend fun loadEpisodes(config: SourceConfig, series: MediaEntry): List<MediaEntry> = withContext(Dispatchers.IO) {
@@ -53,7 +58,7 @@ class ProviderRepository(client: OkHttpClient = ProviderHttp.defaultClient()) {
 
     private fun validate(config: SourceConfig) {
         if (config.id.isBlank()) throw ProviderException("Source identifier is required")
-        httpUrl(config.url)
+        http.checkedUrl(config.url)
         mergedHeaders(config.headers)
         if (config.kind == SourceKind.XTREAM && (config.username.isBlank() || config.password.isBlank()))
             throw ProviderException("Xtream username and password are required")
