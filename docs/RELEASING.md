@@ -11,6 +11,10 @@ The preview installs alongside the earlier 0.1.0 app. Because its package ID dif
 
 ## Stable preview certificate
 
+Preview signing and the five `PREVIEW_SIGNING_*` secrets are configured for `open-ott-play/ottplay-android` with the owner's explicit consent. The public certificate SHA-256 is `2021e3c927fff7c42daf395beacbf0ef738c6d878a827091afb48ddaa32c4dd8`.
+
+[Release v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2) was built from commit [f29a4eb](https://github.com/open-ott-play/ottplay-android/commit/f29a4eb17abb237e5cb58b2fd6a102012a0260fe) in [run 34766968610](https://github.com/open-ott-play/ottplay-android/actions/runs/34766968610). APK/AAB signatures, checksums and verification of the published files are recorded in the [release report](validation/native-0.2-preview-release-results.json).
+
 `scripts/configure-preview-signing.py` creates a **preview-only** RSA key and stores the keystore and password JSON outside the repository with permissions `0600`. Repeated calls reuse the existing key and check its fingerprint; an incomplete file pair causes an error instead of silent key rotation. The Android SDK debug key is not used. Creating the key and uploading it to GitHub require the owner's explicit authorization.
 
 ```bash

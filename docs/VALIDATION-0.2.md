@@ -1,6 +1,6 @@
 # Android 0.2.0 validation
 
-Version `0.2.0`, code `2`, verified source commit `cc3022e`. This validation applies to the standalone Kotlin/Compose/Media3 application. Historical results for the first version are preserved in [VALIDATION.md](VALIDATION.md).
+Version `0.2.0`, code `2`. This document preserves the local results for `cc3022e` and subsequent CI validation of the standalone Kotlin/Compose/Media3 app. Signed [preview v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2) was published from commit [f29a4eb](https://github.com/open-ott-play/ottplay-android/commit/f29a4eb17abb237e5cb58b2fd6a102012a0260fe); the [release report](validation/native-0.2-preview-release-results.json) records its source SHA and artifacts. Historical results for the first version remain in [VALIDATION.md](VALIDATION.md).
 
 ## Local validation
 
@@ -34,6 +34,8 @@ Menu failures involved focus handoff between the separate Dialog window, Activit
 
 The next [run 34763982972](https://github.com/open-ott-play/ottplay-android/actions/runs/34763982972) on `55c13da` confirmed the fixes: all **16 TV tests**, phone HLS and phone focus checks passed; the phone used four distinct notification IDs without the old `1001`. The only remaining phone failure was caused by `ImmersiveModeConfirmation`, Android's first-fullscreen tutorial. The [full second-run results](validation/native-0.2-github-ui-results.json) retain underlying TestRunner exceptions and OS properties. The test now acknowledges this known system tutorial through UiAutomation after checking the system window type, package and exact framework resource IDs. All **4 UI scenarios passed again locally after resetting the tutorial confirmation**; the log confirmed the click and Android stored `confirmed`. This changed only tests; production code remained at `cc3022e`. See the [first-fullscreen check](validation/native-0.2-first-fullscreen-results.json).
 
+The final [run 34765433919](https://github.com/open-ott-play/ottplay-android/actions/runs/34765433919) on `f29a4eb` succeeded: **68 JVM tests, 10 Python release tooling checks, 16 phone API 35 scenarios and 16 Android TV API 36 scenarios**. All suites reported `failures/errors/skips=0`. The scenarios ran on separate `x86_64` phone and television OS images; the phone log confirmed acknowledgment of the first-fullscreen tutorial.
+
 ## Builds and release
 
 Combined validation command:
@@ -44,9 +46,17 @@ ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon \
   :app:connectedDebugAndroidTest :app:assembleRelease :app:bundleRelease
 ```
 
-The release tooling checks for missing signing configuration or fallback signing, version/code increments, the exact phone+TV matrix, tag conflicts, checksums and artifact substitution. `actionlint` passed for both workflows, as did five regression tests for removing Android builds from the old `ottplay-foss`. An independent review of the preview pipeline confirmed that the Gradle variant matches the APK/AAB paths, certificates are checked for both formats, signing parameters are passed through env/stdin, and the SHA/matrix is checked again before publication; no confirmed blocking defects remained. This validates the infrastructure code and tests, not a completed signed release.
+Release tooling checks missing signing configuration and prohibited fallback, increasing version/code, the exact phone+TV matrix, tag conflicts, checksums and artifact substitution. `actionlint` passed for both workflows, as did five regressions covering removal of Android builds from the old `ottplay-foss` project. Independent review of the preview pipeline confirmed that Gradle variants match APK/AAB paths, both formats' certificates are verified, signing values pass through env/stdin, and the SHA/matrix are checked again before publication. No confirmed blockers remained. This infrastructure review preceded the signed release described below.
 
-The persistent preview key has not yet been created or uploaded to GitHub Secrets: automatic permission review required separate authorization from the owner. Therefore, a ready release workflow does not mean that persistent signing is already configured or a prerelease has been published. The procedure and exact secret names are in [RELEASING.md](RELEASING.md). The ordinary debug APK uses the local SDK debug signature; unsigned release APK/AAB files are not a completed signed release.
+During initial local validation, automatic approval review blocked creation of the persistent preview key and its upload to GitHub Secrets pending separate owner consent. After explicit consent, preview signing and all five secrets were configured. [Run 34766968610](https://github.com/open-ott-play/ottplay-android/actions/runs/34766968610) published signed [prerelease v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2) from `f29a4eb`. Verified artifacts, the certificate and CI results are preserved in the [release report](validation/native-0.2-preview-release-results.json). [RELEASING.md](RELEASING.md) documents the procedure and public certificate SHA-256. A production/upload key and Google Play publication remain separate steps; ordinary debug APKs retain the local SDK debug signature.
+
+## Published preview APK verification
+
+The APK downloaded from `v0.2.0-preview.2`, **4,031,187 bytes**, SHA-256 `4e92e7daee56b38d39ebbf019d916c2273c555c7403bba19d8eb9f6269bccef9`, was independently checked against its certificate, package ID, version and checksums. That file was installed on a local Android 15 / API 35 arm64 emulator. The demo source was added through the normal interface and the synthetic clip was opened. A decoded frame was visible; system Play/Pause commands produced `PLAYING` and `PAUSED` states, with the final pause at **1849 ms**, `error=null`. One cold launch took **1082 ms**, a single emulator measurement. The emulator was shut down after verification.
+
+![Published preview APK after system Pause, showing its original UI localization](screenshots/phone-0.2-preview-player.png)
+
+The published AAB separately passed `jarsigner -verify -strict` with the expected public certificate as a trust anchor and `bundletool validate`. Its package ID, version and non-debuggable status matched the APK. Independent verification of the downloaded files did not use the private key. Full public evidence is in the [release report](validation/native-0.2-preview-release-results.json).
 
 ## Result boundaries
 

@@ -2,11 +2,11 @@
 
 A standalone Android app for personal IPTV playlists, movies, and series. The interface uses Kotlin and Jetpack Compose; playback runs through Android Media3 / ExoPlayer. The app supports touch controls and Android TV remotes.
 
-This is a separate product with application ID `play.ott.foss.nativeapp`. It can be installed alongside `ottplay-foss`. Signed previews have a separate ID, `play.ott.foss.nativeapp.preview`; stable preview signing is configured separately from production. The JavaScript player, WebView, Capacitor and Node.js are not required to run or build it. The project version is `0.2.0`; the presence of a feature in the code does not mean that every TV, codec or provider service has been tested.
+This is a separate product with application ID `play.ott.foss.nativeapp`. It can be installed alongside `ottplay-foss`. Signed previews use the separate ID `play.ott.foss.nativeapp.preview`, with a stable signing identity configured independently from production. Neither running nor building the app requires the JavaScript player, WebView, Capacitor, or Node.js. The current project version is `0.2.0`; implementing a feature does not establish compatibility with every TV, codec, or provider service.
 
 ## Getting started
 
-1. Install the debug APK on Android 8.0 / API 26 or later.
+1. Download the APK from [signed preview v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2) and install it on Android 8.0 / API 26 or later. See the [migration guide](docs/MIGRATION.md#installing-the-signed-02-preview) to transfer settings from an earlier installation.
 2. Choose the demo option. The APK includes an eight-second synthetic video that works offline without an account. Its audio track is silent.
 3. Add your M3U playlist, select a local M3U file, or enter your Xtream or Stalker account details.
 4. Open a channel, movie, or episode. Programme listings can be loaded from the source's or playlist's XMLTV URL.
@@ -31,7 +31,7 @@ Supported Kodi license properties become native Media3 configurations for Widevi
 
 HTTP is allowed for personal sources and does not encrypt transmitted data. Settings exports are plain JSON containing source URLs and credentials. Treat an export as a file containing passwords. Local-storage encryption does not encrypt exported files.
 
-Preparing for publication on Google Play and obtaining rights to the content used are separate steps. A separate workflow is ready for signed APK/AAB builds, with version, signature and complete phone/TV matrix checks; it requires the selected channel's signing key to be configured: [docs/RELEASING.md](docs/RELEASING.md). This repository does not claim store approval or Android TV certification.
+Google Play submission and content rights require separate preparation. The signed preview was published through a dedicated workflow that verifies the version, certificate, and complete phone/TV test matrix. The certificate and future release procedure are documented in [docs/RELEASING.md](docs/RELEASING.md); the [publication report](docs/validation/native-0.2-preview-release-results.json) records the source commit and verified artifacts. Store approval and Android TV certification are not claimed.
 
 ## Building
 
