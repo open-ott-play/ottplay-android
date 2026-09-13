@@ -1,6 +1,6 @@
 {
   "version": "0.2.0",
-  "recordedAt": "2026-09-13T14:19:25.509100+00:00",
+  "recordedAt": "2026-09-13T14:50:51.479290+00:00",
   "status": "passed",
   "suites": {
     "core": {
@@ -374,5 +374,26 @@
     "No physical device or paid provider acceptance",
     "ClearKey test uses project-owned synthetic CENC video and local license server",
     "Signed preview provisioning and GitHub secret upload require explicit approval"
-  ]
+  ],
+  "optimizedLocalApk": {
+    "path": "app/build/outputs/apk/local-test/ottplay-native-0.2.0-local-test.apk",
+    "bytes": 4047250,
+    "sha256": "f6bafc598b8ee4666700ca34d3a59d8301dcd96d15f56f7946d7abd8307fa141",
+    "signing": "existing Android SDK debug certificate; local test only",
+    "installation": "adb install -r on emulator-5554: success",
+    "runtime": "Installed corrected R8 APK; actual bundled demo frame decoded and playback advanced; system pause acknowledged at 2794 ms with error=null.",
+    "coldStartSampleMs": 799,
+    "sourceCommit": "cc3022ebfd6b920bff112cbcf756bd25533bddbb"
+  },
+  "lint": {
+    "errors": 0,
+    "warnings": 27,
+    "hints": 1
+  },
+  "build": {
+    "command": "./gradlew --no-daemon :core:test :app:testDebugUnitTest :app:lintDebug :app:connectedDebugAndroidTest :app:assembleRelease :app:bundleRelease",
+    "result": "BUILD SUCCESSFUL",
+    "durationSeconds": 226
+  },
+  "sourceCommit": "cc3022ebfd6b920bff112cbcf756bd25533bddbb"
 }
