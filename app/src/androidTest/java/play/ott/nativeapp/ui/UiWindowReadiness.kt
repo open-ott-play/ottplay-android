@@ -23,13 +23,13 @@ internal fun awaitActivityWindowReady(
         WindowCompat.getInsetsController(activity.window, activity.window.decorView)
             .hide(WindowInsetsCompat.Type.ime())
     }
-    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
     var diagnostics = ""
     val automation = if (acknowledgeImmersiveTutorial) instrumentation.uiAutomation else null
     val originalFlags = automation?.serviceInfo?.flags
     if (automation != null) automation.serviceInfo = automation.serviceInfo.apply {
         flags = flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
     }
+    var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
     var tutorialAcknowledged = false
     try {
         while (System.nanoTime() < deadline) {
@@ -44,6 +44,14 @@ internal fun awaitActivityWindowReady(
             if (ready) return
             if (automation != null && !tutorialAcknowledged) {
                 tutorialAcknowledged = acknowledgeKnownImmersiveTutorial(automation)
+                if (tutorialAcknowledged) {
+                    // Accessibility may block until Android's first-fullscreen overlay
+                    // responds. Its confirmed dismissal starts a separate focus handoff;
+                    // always observe that handoff even if the first deadline just expired.
+                    // This extends the wait only once, after the exact tutorial accepted
+                    // its click. Other system dialogs must still fail the readiness check.
+                    deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+                }
             }
             Thread.sleep(50)
         }
@@ -54,7 +62,10 @@ internal fun awaitActivityWindowReady(
                 "tutorialDescription=${root?.findAccessibilityNodeInfosByViewId("android:id/immersive_cling_description")?.size}, " +
                 "ok=${root?.findAccessibilityNodeInfosByViewId("android:id/ok")?.size}"
         }
-        throw AssertionError("Activity window did not become ready for a hardware key: $diagnostics; windows=$windows")
+        throw AssertionError(
+            "Activity window did not become ready for a hardware key: $diagnostics; " +
+                "tutorialAcknowledged=$tutorialAcknowledged; windows=$windows",
+        )
     } finally {
         if (automation != null && originalFlags != null) {
             automation.serviceInfo = automation.serviceInfo.apply { flags = originalFlags }
