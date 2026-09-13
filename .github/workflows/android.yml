@@ -85,6 +85,8 @@ jobs:
             target: google_apis
             arch: x86_64
             profile: pixel_7
+            ram_mb: 3072
+            stabilize_guest: 'true'
           # SDK stable catalogue: system-images;android-36;android-tv;x86_64, revision 4.
           # This is an Android TV OS image, not a phone with overridden uiMode.
           - device: androidtv-api36
@@ -92,9 +94,13 @@ jobs:
             target: android-tv
             arch: x86_64
             profile: tv_1080p
+            ram_mb: 2048
+            stabilize_guest: 'false'
     env:
       CI_AVD_NAME: ottplay-${{ matrix.device }}
       CI_AVD_PROFILE: ${{ matrix.profile }}
+      CI_AVD_RAM_MB: ${{ matrix.ram_mb }}
+      CI_STABILIZE_GUEST: ${{ matrix.stabilize_guest }}
       CI_SYSTEM_IMAGE: system-images;android-${{ matrix.api }};${{ matrix.target }};${{ matrix.arch }}
       CI_EMULATOR_DIAGNOSTICS: app/build/reports/emulator
     steps:
@@ -137,6 +143,9 @@ jobs:
           mkdir -p "$CI_EMULATOR_DIAGNOSTICS"
           timeout 15s adb devices -l > "$CI_EMULATOR_DIAGNOSTICS/adb-devices.txt" 2>&1 || true
           timeout 20s adb -s emulator-5554 logcat -d > "$CI_EMULATOR_DIAGNOSTICS/logcat.txt" 2>&1 || true
+          timeout 20s adb -s emulator-5554 shell dumpsys dropbox --print system_server_anr > "$CI_EMULATOR_DIAGNOSTICS/system-server-anr.txt" 2>&1 || true
+          timeout 20s adb -s emulator-5554 shell dumpsys dropbox --print system_app_anr > "$CI_EMULATOR_DIAGNOSTICS/system-app-anr.txt" 2>&1 || true
+          free -m > "$CI_EMULATOR_DIAGNOSTICS/host-memory.txt"
           timeout 10s adb -s emulator-5554 emu kill || true
           if [[ -f "$CI_EMULATOR_DIAGNOSTICS/emulator.pid" ]]; then
             emulator_pid=$(cat "$CI_EMULATOR_DIAGNOSTICS/emulator.pid")

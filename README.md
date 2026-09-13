@@ -68,7 +68,7 @@ These tests exercise the app, media service, bundled-video decoding, Compose UI,
 
 ## CI and validation
 
-Version 0.2.1 passed 80 local JVM tests, 31 release/store/signing-tool checks, and all 21 distinct instrumentation scenarios on each of the phone and TV emulators across a full run and targeted rerun. Release APK/AAB checks, actual release captures and the precise signing/device/Console boundaries are documented in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md).
+Version 0.2.1 passed 80 local JVM tests, 40 release/store/signing/CI-tool checks, and all 21 distinct instrumentation scenarios on each of the phone and TV emulators across a full run and targeted rerun. Release APK/AAB checks, actual release captures and the precise signing/device/Console boundaries are documented in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md).
 
 Version 0.2 passed 68 local JVM tests, 16 Android API 35 tests, and 10 release-tooling checks. Coverage includes real ClearKey DRM, interaction with the actual Activity, and position persistence while the screen is closed. Details and hosted CI results are in [docs/VALIDATION-0.2.md](docs/VALIDATION-0.2.md). The first phone/TV matrix history is preserved in [docs/VALIDATION.md](docs/VALIDATION.md).
 
@@ -77,6 +77,8 @@ The [Android workflow](.github/workflows/android.yml) runs core and Android unit
 For manual workflow runs, `run_device_tests` enables two equally required jobs: phone API 35 (`google_apis`, `x86_64`, `pixel_7` profile) and Android TV API 36 (`android-tv`, `x86_64`, `tv_1080p` profile). The TV job uses a separate TV OS image; both jobs run the complete instrumentation suite and retain separate reports. Package `system-images;android-36;android-tv;x86_64`, revision 4, was verified in the stable `sdkmanager --list --channel=0` catalog. Both emulator jobs run automatically on pull requests and pushes to main; manual runs enable them with `run_device_tests=true`. The workflow defines the validation procedure; each run's reports establish its results. Host tests, emulator tests, and physical-device experience are different levels of evidence.
 
 Migration from the older app is described in [docs/MIGRATION.md](docs/MIGRATION.md). Current checks and release captures are collected in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md) and [store](store/README.md).
+
+Device jobs compile their APKs before booting Android and limit the remaining Gradle process to one worker and a 1536 MB heap. The Google APIs phone uses 3072 MB RAM and must sustain 30 seconds below the configured guest CPU/memory/I/O pressure thresholds within five minutes before tests start. The userdebug emulator's `su` reads those protected pressure files; the ADB daemon, app, and instrumentation retain their normal privileges. Pressure samples and system ANR reports are retained as diagnostics; a readiness timeout or failing test fails the job. The TV image retains 2048 MB RAM.
 
 ## Authoring language
 
