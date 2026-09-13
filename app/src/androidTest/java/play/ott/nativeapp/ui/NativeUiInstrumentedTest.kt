@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -59,19 +60,25 @@ class NativeUiInstrumentedTest {
                 controller = null, onPictureInPicture = {}, onFullscreenChanged = {},
             )
         }
-        compose.onNodeWithText("Попробовать демо").performScrollTo().performClick()
+        compose.onNodeWithText("Попробовать демо").performScrollTo().activateForDevice()
+        compose.runOnIdle {
+            assertTrue("Demo activation must dispatch its action", actions.any { it == AppAction.AddDemo })
+            assertEquals(listOf(source), snapshot.sources)
+            assertEquals(source.id, snapshot.selectedSourceId)
+            assertEquals(listOf(entry), snapshot.entries)
+        }
         // A movie-only source must select the film tab; an empty live section must not hide it.
-        compose.onNodeWithTag("catalog-item-${entry.id}").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("catalog-item-${entry.id}").assertIsDisplayed().activateForDevice()
         compose.onNodeWithTag("player-container").assertIsDisplayed()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
         compose.onNodeWithTag("player-container").assertDoesNotExist()
         compose.onNodeWithTag("now-playing-bar").assertIsDisplayed()
-        compose.onNodeWithText("Источники").performClick()
-        compose.onNodeWithText("Добавить по ссылке").performScrollTo().performClick()
+        compose.onNodeWithText("Источники").activateForDevice()
+        compose.onNodeWithText("Добавить по ссылке").performScrollTo().activateForDevice()
         compose.onNodeWithText("Название источника").performTextInput("Новая библиотека")
         compose.onNodeWithText("Адрес плейлиста").performTextInput("https://example.com/new.m3u")
-        compose.onNodeWithText("Добавить", substring = false).performClick()
+        compose.onNodeWithText("Добавить", substring = false).activateForDevice()
         compose.runOnIdle {
             assertTrue(actions.any { it == AppAction.AddDemo })
             assertEquals(entry, (actions.first { it is AppAction.Play } as AppAction.Play).entry)
@@ -97,5 +104,18 @@ class NativeUiInstrumentedTest {
         compose.onNodeWithText("Фильмы").assertIsFocused()
         compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         compose.onNodeWithTag("catalog-item-${entry.id}").assertIsDisplayed()
+    }
+
+    private fun SemanticsNodeInteraction.activateForDevice() {
+        assertIsDisplayed()
+        val configuration = InstrumentationRegistry.getInstrumentation().targetContext.resources.configuration
+        if (configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION) {
+            // TvButton handles D-pad enter, not the touch events injected by performClick().
+            performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+            assertIsFocused()
+            performKeyInput { pressKey(Key.DirectionCenter) }
+        } else {
+            performClick()
+        }
     }
 }
