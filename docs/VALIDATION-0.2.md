@@ -1,6 +1,6 @@
 # Android 0.2.0 validation
 
-Version `0.2.0`, code `2`. This document preserves the local results for `cc3022e` and subsequent CI validation of the standalone Kotlin/Compose/Media3 app. Signed [preview v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2) was published from commit [f29a4eb](https://github.com/open-ott-play/ottplay-android/commit/f29a4eb17abb237e5cb58b2fd6a102012a0260fe); the [release report](validation/native-0.2-preview-release-results.json) records its source SHA and artifacts. Historical results for the first version remain in [VALIDATION.md](VALIDATION.md).
+Version `0.2.0`, code `2`. This document preserves the local results for original commit `cc3022e` and subsequent CI validation of the standalone Kotlin/Compose/Media3 app. Signed [preview v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2) was published from original commit `f29a4eb`; its equivalent revision after translating the documentation history is [7b0eb46](https://github.com/open-ott-play/ottplay-android/commit/7b0eb46b785a00c308b066318eca4e61e3236378). The [release report](validation/native-0.2-preview-release-results.json) retains the actual build SHA and artifacts, as explained in the [history note](HISTORY.md). Historical results for the first version remain in [VALIDATION.md](VALIDATION.md).
 
 ## Local validation
 
