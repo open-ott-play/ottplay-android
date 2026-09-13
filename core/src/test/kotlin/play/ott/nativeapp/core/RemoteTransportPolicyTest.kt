@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -55,9 +56,13 @@ class RemoteTransportPolicyTest {
                 server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", cleartext.url("/opaque-credential")))
                 val source = SourceConfig("source", "Secure", SourceKind.M3U, server.url("/list").toString(),
                     headers = mapOf("X-Provider-Session" to "private"))
-                val result = runCatching { ProviderRepository(client, RemoteTransportPolicy.HTTPS_ONLY).load(source) }
-                assertTrue(result.exceptionOrNull() is ProviderException)
-                assertEquals("private", server.takeRequest().getHeader("X-Provider-Session"))
+                val error = assertFailsWith<ProviderException> {
+                    ProviderRepository(client, RemoteTransportPolicy.HTTPS_ONLY).load(source)
+                }
+                // A connection/TLS error is not evidence that the downgrade policy ran.
+                assertEquals(RemoteTransportPolicy.HTTPS_REQUIRED, error.message)
+                val request = assertNotNull(server.takeRequest(5, TimeUnit.SECONDS), "HTTPS source request was not received")
+                assertEquals("private", request.getHeader("X-Provider-Session"))
                 assertNull(cleartext.takeRequest(150, TimeUnit.MILLISECONDS))
                 assertEquals(0, cleartext.requestCount)
             }
