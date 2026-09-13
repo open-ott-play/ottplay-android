@@ -1,6 +1,18 @@
 # Native version 0.1.0 validation
 
-Source code: `8eed56f52fe5a90829354a1fe0ff1de625931709`. Local validation was performed on 13 September 2026 UTC. Machine-readable results: [validation/local-results.json](validation/local-results.json).
+Application and local APK source: `8eed56f52fe5a90829354a1fe0ff1de625931709`. Local validation was performed on 13 September 2026 UTC. Machine-readable results: [validation/local-results.json](validation/local-results.json).
+
+## Final GitHub result: all checks passed
+
+The [full matrix](https://github.com/open-ott-play/ottplay-android/actions/runs/34746025351) completed with **SUCCESS** on `f18d433cee6248e5d8a443602c415daee5ea3739`. The JUnit files and emulator properties were downloaded and checked:
+
+- [JVM tests and APK build](https://github.com/open-ott-play/ottplay-android/actions/runs/34746025351/job/103694010309): **44/44** (25 core + 19 Android unit).
+- [Phone](https://github.com/open-ott-play/ottplay-android/actions/runs/34746025351/job/103694258404): **11/11**, Android 15 / API 35, `sdk_gphone64_x86_64`.
+- [Android TV](https://github.com/open-ott-play/ottplay-android/actions/runs/34746025351/job/103694258309): **11/11**, Android 16 / API 36, `sdk_google_atv64_x86_64`.
+
+Total: **55 unique tests, 66 executions, 0 failures/errors/skips**. Phone and TV run the same complete instrumented suite. On TV, the shared UI scenario activates buttons through focus and the remote's OK key; on the phone, it uses touch. Machine-readable results, test classes and OS properties: [validation/github-results.json](validation/github-results.json).
+
+Only CI, tests and documentation changed after local APK validation. Production sources and build configuration match the locally verified APK, whose SHA-256 was checked again. Emulator preparation and test isolation fixes are described below; failed attempts are not counted as successful validation.
 
 ## Local validation
 
@@ -30,7 +42,7 @@ The bundled source was selected through the real MainActivity, its catalogue was
 
 The optimized release APK was built with R8 and resource shrinking. A separate installable copy was signed with the local Android SDK test certificate, leaving the unsigned release separate. APK v2/v3 signatures were verified. This copy was installed over the debug version: the stored encrypted catalogue was read, MainActivity opened, the clip decoded, and system Pause stopped playback at 3560 ms without an error. [Release player frame](screenshots/phone-release-player.png). One cold launch measured with `am start -W` took 1051 ms; this is a single emulator observation, not an SLA. This certificate is for preview testing, not a store release. SHA-256 and size are recorded in the JSON linked above.
 
-## GitHub and validation limits
+## Validation process fixes
 
 The [first full workflow](https://github.com/open-ott-play/ottplay-android/actions/runs/34742174407) passed Linux host checks and built the APK. Both emulator jobs stopped before testing: Android Emulator required 7372.80 MB for userdata, but only 6836.73 MB remained for the phone and 2072.44 MB for TV. This was not an instrumented test result. The retry bounded userdata size and removed unused Android NDK/CMake installations from the temporary runner.
 
@@ -39,5 +51,7 @@ The [next run](https://github.com/open-ott-play/ottplay-android/actions/runs/347
 The [following matrix](https://github.com/open-ott-play/ottplay-android/actions/runs/34743738484) passed 11/11 on the phone and 10/11 on real TV API 36, including both Media3 checks and all storage checks. The shared onboarding test sent touch events to `androidx.tv.material3.Button`, which handles D-pad input. This was verified in the bytecode of the locked dependencies: `performClick` calls `performTouchInput`, while the TV button uses `handleDPadEnter`. The test was corrected to select input by device type: touch on the phone, focus plus remote OK on TV. Section selection based on catalogue contents remained automatic. Application code did not change for this fix.
 
 The [matrix with remote input](https://github.com/open-ott-play/ottplay-android/actions/runs/34744246539) passed 11/11 on TV and 10/11 on the phone, including both UI tests. During the Pause check, Android SystemUI sent a separate Stop, after which the service correctly cleared its playlist. The HLS test and the following playback test shared a session; delayed removal of the previous media notification was a likely cause of the interference, consistent with [Android 15 SystemUI code](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android15-release/packages/SystemUI/src/com/android/systemui/media/controls/domain/pipeline/LegacyMediaDataManagerImpl.kt#640). The log did not contain the exact stack that initiated Stop. Tests now finish Activity destruction and wait for the app's service and media notification to disappear between scenarios. Within the lifecycle scenario, the service remains alive when the Activity closes; the Pause/Stop assertion and timeout were not weakened. Production handling of system Stop did not change.
+
+## Validation boundaries
 
 Physical televisions, set-top boxes and phones; real user IPTV accounts; DRM; hardware HEVC/AC3 paths; HDMI/audio passthrough; and store certification were not tested. Successful H264/AAC playback does not establish those cases. Proprietary adapters from the original app are not claimed as ported; [MIGRATION.md](MIGRATION.md) defines the migration scope.

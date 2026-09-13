@@ -68,6 +68,8 @@ These tests exercise the app, media service, bundled-video decoding, Compose UI,
 
 ## CI and validation
 
+[Verified matrix](https://github.com/open-ott-play/ottplay-android/actions/runs/34746025351): 44 JVM tests, 11 tests on a phone with API 35 and 11 on actual Android TV API 36; all passed without failures or skips. Validation details and limits: [docs/VALIDATION.md](docs/VALIDATION.md).
+
 The [Android workflow](.github/workflows/android.yml) runs core and Android unit tests, lint, and debug/release APK builds on pushes and pull requests. APKs and reports are uploaded as run artifacts. [Dependabot](.github/dependabot.yml) maintains GitHub Actions and Gradle dependencies.
 
 For manual workflow runs, `run_device_tests` enables two equally required jobs: phone API 35 (`google_apis`, `x86_64`, `pixel_7` profile) and Android TV API 36 (`android-tv`, `x86_64`, `tv_1080p` profile). The TV job uses a separate TV OS image; both jobs run the complete instrumentation suite and retain separate reports. Package `system-images;android-36;android-tv;x86_64`, revision 4, was verified in the stable `sdkmanager --list --channel=0` catalog. Emulator jobs are disabled by default. The workflow defines the validation procedure; each run's reports establish its results. Host tests, emulator tests, and physical-device experience are different levels of evidence.
