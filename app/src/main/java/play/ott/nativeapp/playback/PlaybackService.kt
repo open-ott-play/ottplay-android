@@ -9,6 +9,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommands
@@ -17,6 +18,8 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,6 +46,18 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        // SystemUI can process a dismissed notification after a replacement session has started.
+        // Reusing its key lets that delayed Stop target the replacement session. Keep one ID for
+        // this entire service lifetime, including channel changes, and a new ID after recreation.
+        setMediaNotificationProvider(DefaultMediaNotificationProvider.Builder(this)
+            .setNotificationId(notificationIds.getAndUpdate { previous ->
+                when (previous) {
+                    Int.MAX_VALUE -> 1
+                    20937 -> 20939 // 20938 is Media3's temporary foreground-service notification.
+                    else -> previous + 1
+                }
+            })
+            .build())
         val client = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -172,6 +187,11 @@ class PlaybackService : MediaSessionService() {
                 Futures.immediateFailedFuture(IllegalArgumentException("Invalid playback request"))
             }
         }
+    }
+
+    private companion object {
+        // Never reuse an ID in this process; randomize the starting point across process restarts.
+        val notificationIds = AtomicInteger(Random.nextInt(100_000, Int.MAX_VALUE))
     }
 }
 

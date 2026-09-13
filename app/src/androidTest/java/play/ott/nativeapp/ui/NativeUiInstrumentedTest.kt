@@ -2,6 +2,7 @@ package play.ott.nativeapp.ui
 
 import android.content.res.Configuration
 import android.view.KeyEvent
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -9,10 +10,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -38,7 +41,7 @@ import play.ott.nativeapp.core.SourceKind
 /** UI behavior is exercised without changing the installed application's real source vault. */
 @RunWith(AndroidJUnit4::class)
 class NativeUiInstrumentedTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val source = SourceConfig("ui-test", "Демоисточник", SourceKind.M3U, "https://example.com/list.m3u")
     private val entry = MediaEntry("ui-test:movie", source.id, "Тестовый ролик", "https://example.com/video.mp4", kind = MediaKind.MOVIE)
 
@@ -127,13 +130,23 @@ class NativeUiInstrumentedTest {
         compose.onNodeWithTag("library-tab-LIVE").assertIsFocused()
         // Deliver hardware events so a phone running the TV layout also leaves touch input mode.
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        awaitActivityWindowReady(compose.activity, hideIme = true)
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
+        awaitFocused("library-tab-MOVIES")
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         compose.waitForIdle()
         compose.onNodeWithTag("library-tab-MOVIES").assertIsFocused()
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
-        compose.waitForIdle()
+        awaitFocused("catalog-item-movie-0")
         compose.onNodeWithTag("catalog-item-movie-0").assertIsDisplayed().assertIsFocused()
+    }
+
+    private fun awaitFocused(tag: String) {
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag(tag).fetchSemanticsNodes()
+                .any { it.config.getOrElse(SemanticsProperties.Focused) { false } }
+        }
+        compose.onNodeWithTag(tag).assertIsFocused()
     }
 
     private fun SemanticsNodeInteraction.activateForDevice() {

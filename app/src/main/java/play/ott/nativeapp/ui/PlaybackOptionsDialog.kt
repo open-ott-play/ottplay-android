@@ -24,6 +24,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.C
@@ -61,13 +62,16 @@ internal fun PlaybackOptionsDialog(
     val supportsPip = LocalContext.current.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
     val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     val initialFocus = remember { FocusRequester() }
-    LaunchedEffect(speedOptions, isTv) {
-        if (isTv) { withFrameNanos { }; initialFocus.requestFocus() }
-    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (speedOptions) "Скорость воспроизведения" else "Параметры плеера") },
         text = {
+            // The dialog owns a separate window and composition. Wait for that window,
+            // so the requester is attached before receiving the first remote event.
+            val windowFocused = LocalWindowInfo.current.isWindowFocused
+            LaunchedEffect(speedOptions, isTv, windowFocused) {
+                if (isTv && windowFocused) { withFrameNanos { }; initialFocus.requestFocus() }
+            }
             Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (speedOptions) {
                     val speeds = listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f)

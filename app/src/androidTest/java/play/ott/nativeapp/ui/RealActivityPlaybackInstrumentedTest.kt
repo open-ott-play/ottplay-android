@@ -70,6 +70,7 @@ class RealActivityPlaybackInstrumentedTest {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         activity = instrumentation.startActivitySync(launch) as MainActivity
         awaitNode("catalog-item-$entryId")
+        awaitActivityWindowReady(requireNotNull(activity), hideIme = true)
         if (isTv) {
             // Crucially no RequestFocus or touch injection: launch must create usable remote focus.
             awaitFocused("library-tab-MOVIES")
@@ -99,6 +100,7 @@ class RealActivityPlaybackInstrumentedTest {
         awaitPlayback("Speed selection must reach the service") { it.playbackParameters.speed == 1.25f }
         openOptions()
         activateMenuItem("player-scale-${AspectRatioFrameLayout.RESIZE_MODE_ZOOM}")
+        awaitActivityWindowReady(requireNotNull(activity))
         onMain { assertEquals(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, playerView.resizeMode) }
 
         if (isTv) {
@@ -114,6 +116,12 @@ class RealActivityPlaybackInstrumentedTest {
     }
 
     private fun openOptions() {
+        awaitActivityWindowReady(requireNotNull(activity))
+        if (isTv) awaitState("Native player must regain remote focus after the dialog closes") {
+            var focused = false
+            onMain { focused = activity?.window?.decorView?.findViewWithTag<View>("ott-native-video")?.hasFocus() == true }
+            focused
+        }
         if (isTv) key(KeyEvent.KEYCODE_MENU) else compose.onNodeWithTag("player-options").performClick()
         awaitNode("player-speed-options")
     }

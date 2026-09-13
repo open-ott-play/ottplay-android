@@ -171,10 +171,30 @@ internal fun NativePlayerPane(
 @androidx.annotation.OptIn(UnstableApi::class)
 private class RemotePlayerView(context: Context) : PlayerView(context) {
     var openOptions: () -> Unit = {}
+    private var playbackFocusPending = false
 
     fun focusPlaybackControl() {
-        showController()
-        findViewById<View>(androidx.media3.ui.R.id.exo_play_pause).requestFocus()
+        playbackFocusPending = true
+        restorePlaybackFocusWhenReady()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) restorePlaybackFocusWhenReady()
+    }
+
+    private fun restorePlaybackFocusWhenReady() {
+        if (!playbackFocusPending || !hasWindowFocus()) return
+        post {
+            // Dismissing a dialog schedules removal of its separate window. Restore
+            // focus only after that handoff, without stealing unrelated future focus.
+            if (playbackFocusPending && isAttachedToWindow && hasWindowFocus()) {
+                showController()
+                if (findViewById<View>(androidx.media3.ui.R.id.exo_play_pause).requestFocus()) {
+                    playbackFocusPending = false
+                }
+            }
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

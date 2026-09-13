@@ -82,6 +82,9 @@ class HlsPlaybackInstrumentedTest {
 
     private fun awaitDecoded(player: MediaController, id: String) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+        val transitions = ArrayDeque<String>()
+        var previousState = ""
+        var lastState = "not observed"
         while (System.nanoTime() < deadline) {
             var decoded = false
             var errorCode: Int? = null
@@ -89,12 +92,23 @@ class HlsPlaybackInstrumentedTest {
                 errorCode = player.playerError?.errorCode
                 decoded = player.currentMediaItem?.mediaId == id && player.isPlaying &&
                     player.currentPosition >= 400L && player.videoSize.width == 640 && player.videoSize.height == 360
+                // Keep only synthetic ids and native state, never stream URLs or credentials.
+                val state = "item=${player.currentMediaItem?.mediaId}, count=${player.mediaItemCount}, " +
+                    "state=${player.playbackState}, playWhenReady=${player.playWhenReady}, " +
+                    "isPlaying=${player.isPlaying}, suppression=${player.playbackSuppressionReason}, " +
+                    "size=${player.videoSize.width}x${player.videoSize.height}, error=$errorCode"
+                lastState = "$state, position=${player.currentPosition}, buffered=${player.bufferedPosition}, loading=${player.isLoading}"
+                if (state != previousState) {
+                    if (transitions.size == 12) transitions.removeFirst()
+                    transitions.addLast(lastState)
+                    previousState = state
+                }
             }
-            assertTrue("HLS decoder failed for $id with Media3 code $errorCode", errorCode == null)
+            assertTrue("HLS decoder failed for $id: $lastState; transitions=$transitions", errorCode == null)
             if (decoded) return
             Thread.sleep(50)
         }
-        throw AssertionError("HLS video/position did not advance for $id")
+        throw AssertionError("HLS video/position did not advance for $id: $lastState; transitions=$transitions")
     }
 
     private fun connect(): MediaController {
