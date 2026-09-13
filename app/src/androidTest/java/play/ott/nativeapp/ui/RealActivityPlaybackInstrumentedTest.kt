@@ -100,7 +100,7 @@ class RealActivityPlaybackInstrumentedTest {
         awaitPlayback("Speed selection must reach the service") { it.playbackParameters.speed == 1.25f }
         openOptions()
         activateMenuItem("player-scale-${AspectRatioFrameLayout.RESIZE_MODE_ZOOM}")
-        awaitActivityWindowReady(requireNotNull(activity))
+        awaitActivityWindowReady(requireNotNull(activity), acknowledgeImmersiveTutorial = true)
         onMain { assertEquals(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, playerView.resizeMode) }
 
         if (isTv) {
@@ -116,7 +116,7 @@ class RealActivityPlaybackInstrumentedTest {
     }
 
     private fun openOptions() {
-        awaitActivityWindowReady(requireNotNull(activity))
+        awaitActivityWindowReady(requireNotNull(activity), acknowledgeImmersiveTutorial = true)
         if (isTv) awaitState("Native player must regain remote focus after the dialog closes") {
             var focused = false
             onMain { focused = activity?.window?.decorView?.findViewWithTag<View>("ott-native-video")?.hasFocus() == true }
