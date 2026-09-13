@@ -47,6 +47,9 @@ internal fun SourceEditor(
     var password by rememberSaveable(id) { mutableStateOf(original?.password.orEmpty()) }
     var mac by rememberSaveable(id) { mutableStateOf(original?.mac.orEmpty()) }
     var epgUrl by rememberSaveable(id) { mutableStateOf(original?.epgUrl.orEmpty()) }
+    var catchupHours by rememberSaveable(id) {
+        mutableStateOf(original?.catchupDaysFallback?.takeIf { it > 0 }?.times(24)?.toString().orEmpty())
+    }
     var headers by rememberSaveable(id) { mutableStateOf(original?.headers?.entries?.joinToString("\n") { "${it.key}: ${it.value}" }.orEmpty()) }
     var showPassword by rememberSaveable(id) { mutableStateOf(false) }
     var validation by rememberSaveable(id) { mutableStateOf<String?>(null) }
@@ -93,6 +96,13 @@ internal fun SourceEditor(
                     value = epgUrl, onValueChange = { epgUrl = it }, label = { Text("Адрес телепрограммы XMLTV (необязательно)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
+                if (kind == SourceKind.M3U) OutlinedTextField(
+                    value = catchupHours, onValueChange = { catchupHours = it },
+                    label = { Text("Архив, часов (если нет в плейлисте)") },
+                    supportingText = { Text("Пусто или 0 — не задавать глубину архива.") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
                 OutlinedTextField(
                     value = headers, onValueChange = { headers = it }, label = { Text("HTTP-заголовки (необязательно)") },
                     placeholder = { Text("User-Agent: My player\nReferer: https://example.com/") },
@@ -107,6 +117,7 @@ internal fun SourceEditor(
             ActionButton(text = if (original == null) "Добавить" else "Сохранить", selected = true, onClick = {
                 val cleanUrl = url.trim()
                 val parsedHeaders = parseHeaders(headers)
+                val hours = if (catchupHours.isBlank()) 0.0 else catchupHours.trim().replace(',', '.').toDoubleOrNull()
                 validation = when {
                     name.isBlank() -> "Введите название источника."
                     !isHttpUrl(cleanUrl) && !(localSource && cleanUrl == original?.url) -> "Введите корректный адрес источника: http:// или https://."
@@ -114,10 +125,14 @@ internal fun SourceEditor(
                     kind == SourceKind.STALKER && !Regex("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}").matches(mac.trim()) -> "Введите MAC-адрес, например 00:1A:79:00:00:00."
                     epgUrl.isNotBlank() && !isHttpUrl(epgUrl.trim()) -> "Введите корректный адрес телепрограммы или оставьте поле пустым."
                     parsedHeaders == null -> "Проверьте заголовки: по одному имя: значение на строку."
+                    kind == SourceKind.M3U && (hours == null || !hours.isFinite() || hours < 0) -> "Укажите неотрицательное число часов архива."
                     else -> null
                 }
                 if (validation == null) {
-                    onSave(SourceConfig(id, name.trim(), kind, cleanUrl, username.trim(), password, mac.trim(), epgUrl.trim(), parsedHeaders.orEmpty()))
+                    val source = original ?: SourceConfig(id, name.trim(), kind, cleanUrl)
+                    onSave(source.copy(id = id, name = name.trim(), kind = kind, url = cleanUrl,
+                        username = username.trim(), password = password, mac = mac.trim(), epgUrl = epgUrl.trim(),
+                        headers = parsedHeaders.orEmpty(), catchupDaysFallback = if (kind == SourceKind.M3U) requireNotNull(hours) / 24.0 else source.catchupDaysFallback))
                 }
             })
         },

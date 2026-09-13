@@ -31,10 +31,10 @@ object LegacySourceImporter {
                 val parsed = url.toHttpUrlOrNull()
                 if (parsed == null) notes += "Плейлист ${index + 1}: локальный файл или неподдерживаемый адрес. Импортируйте исходный M3U-файл отдельно."
                 else sources += SourceConfig(stableId("legacy", "m3u", parsed.toString()),
-                    slot.string("name").ifBlank { "Импортированный плейлист ${index + 1}" }, SourceKind.M3U, parsed.toString())
+                    slot.string("name").ifBlank { "Импортированный плейлист ${index + 1}" }, SourceKind.M3U, parsed.toString(),
+                    catchupDaysFallback = (slot.string("rechours").toDoubleOrNull() ?: 0.0)
+                        .takeIf { it.isFinite() && it in 0.0..87_600.0 }?.div(24) ?: 0.0)
             }
-            if ((slot.string("rechours").toDoubleOrNull() ?: 0.0) > 0)
-                notes += "Плейлист ${index + 1}: часы архива из старых настроек не перенесены. Новое приложение читает глубину архива из catchup-тегов плейлиста."
             if (slot.string("medUrl").isNotBlank()) notes += "Плейлист ${index + 1}: отдельная медиатека старого формата не импортирована как M3U."
         }
         val xtream = find("xtreamxtream_data", "xtream_data")

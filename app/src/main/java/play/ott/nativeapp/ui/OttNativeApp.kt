@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,11 +53,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -72,6 +82,7 @@ import coil.compose.AsyncImage
 import play.ott.nativeapp.core.MediaEntry
 import play.ott.nativeapp.core.MediaKind
 import play.ott.nativeapp.core.SourceConfig
+import kotlinx.coroutines.launch
 
 private enum class LibraryTab(val title: String, val heading: String) {
     LIVE("Эфир", "Телеканалы"), MOVIES("Фильмы", "Кино на ваш вечер"),
@@ -115,6 +126,28 @@ fun OttNativeApp(
     val visibleEntries = remember(tabEntries, search, group) {
         tabEntries.filter { (group.isBlank() || it.group == group) && (search.isBlank() || it.name.contains(search, ignoreCase = true) || it.group.contains(search, ignoreCase = true)) }
     }
+    val railFocus = remember { FocusRequester() }
+    val welcomeFocus = remember { FocusRequester() }
+    val catalogFocus = remember { FocusRequester() }
+    val gridState = rememberLazyGridState()
+    val focusScope = rememberCoroutineScope()
+    var lastFocusedEntryId by rememberSaveable { mutableStateOf<String?>(null) }
+    val focusEntryId = visibleEntries.firstOrNull { it.id == lastFocusedEntryId }?.id ?: visibleEntries.firstOrNull()?.id
+    var libraryFocusSet by remember(isTv, fullscreen, state.sources.isEmpty()) { mutableStateOf(false) }
+    LaunchedEffect(isTv, fullscreen, state.isBusy, state.sources.isEmpty()) {
+        if (isTv && !fullscreen && !state.isBusy && !libraryFocusSet) {
+            // Request only on entering the library, after layout and automatic tab selection.
+            // Later state updates must not pull focus out of search or a dialog.
+            withFrameNanos { }
+            if (state.sources.isEmpty()) welcomeFocus.requestFocus()
+            else if (lastFocusedEntryId != null && focusEntryId != null) {
+                gridState.scrollToItem(visibleEntries.indexOfFirst { it.id == focusEntryId })
+                withFrameNanos { }
+                catalogFocus.requestFocus()
+            } else railFocus.requestFocus()
+            libraryFocusSet = true
+        }
+    }
     LaunchedEffect(state.selectedSourceId, state.entries) {
         if (initializedSource != state.selectedSourceId && state.entries.isNotEmpty()) {
             initializedSource = state.selectedSourceId
@@ -153,7 +186,25 @@ fun OttNativeApp(
                                     Brand()
                                     Spacer(Modifier.height(18.dp))
                                     LibraryTab.entries.forEach { option ->
-                                        ActionButton(option.title, { tab = option }, Modifier.fillMaxWidth(), selected = tab == option)
+                                        ActionButton(option.title, { tab = option }, Modifier.fillMaxWidth()
+                                            .testTag("library-tab-${option.name}")
+                                            .then(if (tab == option) Modifier.focusRequester(railFocus) else Modifier)
+                                            .onPreviewKeyEvent { event ->
+                                                if (isTv && event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight &&
+                                                    (state.sources.isEmpty() || focusEntryId != null)) {
+                                                    if (event.nativeKeyEvent.repeatCount == 0) {
+                                                        if (state.sources.isEmpty()) welcomeFocus.requestFocus()
+                                                        else focusScope.launch {
+                                                            // A remembered grid position can put a new tab's target
+                                                            // outside the lazy viewport. Compose it before focusing.
+                                                            gridState.scrollToItem(visibleEntries.indexOfFirst { it.id == focusEntryId })
+                                                            withFrameNanos { }
+                                                            catalogFocus.requestFocus()
+                                                        }
+                                                    }
+                                                    true
+                                                } else false
+                                            }, selected = tab == option)
                                     }
                                     Spacer(Modifier.weight(1f))
                                     Text("БИБЛИОТЕКА", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -175,6 +226,7 @@ fun OttNativeApp(
                                         onAdd = { sourceEditorId = null; sourceEditorOpen = true },
                                         onImport = { onAction(AppAction.ImportPlaylist) },
                                         onDemo = { onAction(AppAction.AddDemo) },
+                                        initialFocus = welcomeFocus,
                                     )
                                 } else {
                                     LibraryHeader(tab.heading, selectedSource, state.sources, onAction, state.isBusy)
@@ -222,14 +274,17 @@ fun OttNativeApp(
                                             { search = ""; group = "" }, { onAction(AppAction.Refresh) }, Modifier.weight(1f))
                                     } else {
                                         LazyVerticalGrid(
+                                            state = gridState,
                                             columns = GridCells.Adaptive(if (wide) 218.dp else 152.dp),
-                                            modifier = Modifier.weight(1f),
+                                            modifier = Modifier.weight(1f).testTag("library-grid"),
                                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                                             verticalArrangement = Arrangement.spacedBy(12.dp),
                                             contentPadding = PaddingValues(bottom = 24.dp),
                                         ) {
                                             items(visibleEntries, key = { it.id }) { entry ->
-                                                MediaCard(entry, entry.id in state.favoriteIds, state.playingEntry?.id == entry.id, onAction)
+                                                MediaCard(entry, entry.id in state.favoriteIds, state.playingEntry?.id == entry.id, onAction,
+                                                    Modifier.then(if (entry.id == focusEntryId) Modifier.focusRequester(catalogFocus) else Modifier)
+                                                        .onFocusChanged { if (it.hasFocus) lastFocusedEntryId = entry.id })
                                             }
                                         }
                                     }
@@ -298,7 +353,7 @@ private fun LibraryHeader(title: String, source: SourceConfig?, sources: List<So
 }
 
 @Composable
-private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit, onDemo: () -> Unit) {
+private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit, onDemo: () -> Unit, initialFocus: FocusRequester) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.Start) {
         Text("ДОБРО ПОЖАЛОВАТЬ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(20.dp))
@@ -306,7 +361,7 @@ private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit,
         Spacer(Modifier.height(16.dp))
         Text("Добавьте плейлист M3U или подключите аккаунт Xtream / Stalker. Каналы, фильмы, сериалы и телепрограмма появятся здесь.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(28.dp))
-        ActionButton("Добавить источник", onAdd, selected = true)
+        ActionButton("Добавить источник", onAdd, Modifier.focusRequester(initialFocus).testTag("welcome-add-source"), selected = true)
         Spacer(Modifier.height(8.dp))
         ActionButton("Открыть файл M3U", onImport)
         Spacer(Modifier.height(8.dp))
@@ -328,12 +383,12 @@ private fun EmptyLibrary(tab: LibraryTab, filtered: Boolean, loading: Boolean, o
 }
 
 @Composable
-internal fun MediaCard(entry: MediaEntry, favorite: Boolean, playing: Boolean, onAction: (AppAction) -> Unit) {
+internal fun MediaCard(entry: MediaEntry, favorite: Boolean, playing: Boolean, onAction: (AppAction) -> Unit, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(18.dp)
     Card(
         onClick = { onAction(if (entry.kind == MediaKind.SERIES) AppAction.OpenSeries(entry) else AppAction.Play(entry)) },
-        modifier = Modifier.fillMaxWidth().testTag("catalog-item-${entry.id}").onFocusChanged { focused = it.isFocused }
+        modifier = modifier.fillMaxWidth().testTag("catalog-item-${entry.id}").onFocusChanged { focused = it.isFocused }
             .border(BorderStroke(if (focused || playing) 2.dp else 0.dp, if (focused || playing) MaterialTheme.colorScheme.primary else Color.Transparent), shape),
         colors = CardDefaults.cardColors(containerColor = if (focused) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface),
         shape = shape,

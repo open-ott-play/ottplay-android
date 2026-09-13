@@ -20,6 +20,7 @@ data class SourceConfig(
     val mac: String = "",
     val epgUrl: String = "",
     val headers: Map<String, String> = emptyMap(),
+    val catchupDaysFallback: Double = 0.0,
 ) {
     override fun toString(): String = "SourceConfig(id=$id, kind=$kind)"
 }
@@ -48,6 +49,9 @@ data class MediaEntry(
     val season: Int? = null,
     val episode: Int? = null,
     val providerId: String = "",
+    val drm: DrmConfig? = null,
+    val mimeType: String? = null,
+    val playbackUnsupportedReason: String? = null,
 ) {
     override fun toString(): String = "MediaEntry(id=$id, sourceId=$sourceId, kind=$kind)"
 }

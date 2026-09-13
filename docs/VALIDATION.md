@@ -1,3 +1,5 @@
+Later version 0.2: [additional DRM, remote-control and background playback checks](VALIDATION-0.2.md). The version 0.1 history is preserved below.
+
 # Native version 0.1.0 validation
 
 Application and local APK source: `8eed56f52fe5a90829354a1fe0ff1de625931709`. Local validation was performed on 13 September 2026 UTC. Machine-readable results: [validation/local-results.json](validation/local-results.json).

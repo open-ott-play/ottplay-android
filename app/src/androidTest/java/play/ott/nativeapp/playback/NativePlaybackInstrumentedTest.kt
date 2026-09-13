@@ -13,6 +13,9 @@ import androidx.media3.session.SessionToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
@@ -20,6 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import play.ott.nativeapp.R
+import play.ott.nativeapp.OttplayApplication
 
 /** Exercises real Media3 service, IPC, decoder and surface using a bundled synthetic video. */
 @UnstableApi
@@ -30,6 +34,8 @@ class NativePlaybackInstrumentedTest {
 
     @Test fun decoderContinuesAfterControllerReleaseAndReconnectsUntilExplicitStop() {
         PlaybackTestLifecycle.finishPreviousPlayback()
+        val preferences = (context.applicationContext as OttplayApplication).repository.preferences
+        val previousPreferences = runBlocking { preferences.data.first() }
         val launch = requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         var activity = instrumentation.startActivitySync(launch)
@@ -65,6 +71,16 @@ class NativePlaybackInstrumentedTest {
             awaitPlayer("Controller release terminated service playback", replacement) {
                 it.currentMediaItem?.mediaId == "instrumentation-synthetic-demo" && it.isPlaying
             }
+            // There is no Activity or ViewModel now. The service must persist this seek/pause.
+            onMain { replacement.pause(); replacement.seekTo(2_000) }
+            awaitPlayer("Background seek did not settle", replacement) {
+                !it.playWhenReady && it.currentPosition in 1_900L..2_100L
+            }
+            runBlocking {
+                withTimeout(10_000) {
+                    preferences.data.first { it.resumePositions["instrumentation-synthetic-demo"] == 2_000L }
+                }
+            }
             activity = instrumentation.startActivitySync(launch)
             surface = attachSurface(activity)
             onMain {
@@ -88,6 +104,7 @@ class NativePlaybackInstrumentedTest {
                 activity.finish()
             }
             PlaybackTestLifecycle.finishPreviousPlayback()
+            runBlocking { preferences.update { previousPreferences } }
         }
     }
 

@@ -18,6 +18,7 @@ internal class ChannelNavigationPlayer(
     loadChannels: suspend (String) -> List<MediaEntry>,
     resolve: suspend (MediaEntry) -> PlaybackStream,
     onFailure: () -> Unit,
+    validate: (MediaItem) -> Unit = {},
 ) : ForwardingSimpleBasePlayer(delegate) {
     private val navigator = ChannelNavigator(
         scope = scope,
@@ -26,8 +27,10 @@ internal class ChannelNavigationPlayer(
         resolve = resolve,
         commit = { entry, stream ->
             val item = PlaybackItems.build(entry.id, entry.name, stream.url, stream.headers,
-                artwork = entry.logo.takeIf { it.isNotBlank() }, isLive = true)
-                .let { if (stream.mimeType != null) it.buildUpon().setMimeType(stream.mimeType).build() else it }
+                artwork = entry.logo.takeIf { it.isNotBlank() }, isLive = true,
+                drm = entry.drm, mimeType = entry.mimeType ?: stream.mimeType,
+                unsupportedReason = entry.playbackUnsupportedReason)
+            validate(item)
             player.setMediaItem(item, PlaybackItems.startPositionMs(item))
             player.prepare()
             player.play()

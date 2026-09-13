@@ -11,6 +11,10 @@ import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
+import play.ott.nativeapp.core.DrmConfig
+import play.ott.nativeapp.core.DrmScheme
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -20,6 +24,90 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = PlaybackTestApplication::class)
 class PlaybackItemsTest {
+    @Test
+    @Config(shadows = [SupportedMediaDrm::class])
+    fun `native container checks accept MIME hints on extensionless protected streams`() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        org.robolectric.Shadows.shadowOf(context.packageManager)
+            .setSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK, true)
+        for ((scheme, mimeType) in listOf(DrmScheme.WIDEVINE to MimeTypes.APPLICATION_MPD,
+            DrmScheme.WIDEVINE to MimeTypes.APPLICATION_M3U8,
+            DrmScheme.CLEARKEY to MimeTypes.APPLICATION_MPD,
+            DrmScheme.PLAYREADY to MimeTypes.APPLICATION_MPD,
+            DrmScheme.PLAYREADY to MimeTypes.APPLICATION_SS)) {
+            val item = PlaybackItems.build("opaque", "Protected", "https://video.test/play?id=opaque",
+                drm = DrmConfig(scheme, "https://license.test/acquire"), mimeType = mimeType)
+            PlaybackItems.requireSupported(context, PlaybackItems.resolve(MediaItem.fromBundle(item.toBundle())))
+        }
+    }
+
+    /** The unit test simulates scheme availability; real MediaDrm is covered by instrumentation. */
+    @org.robolectric.annotation.Implements(android.media.MediaDrm::class)
+    class SupportedMediaDrm {
+        companion object {
+            @JvmStatic
+            @org.robolectric.annotation.Implementation
+            @Suppress("UNUSED_PARAMETER")
+            fun isCryptoSchemeSupported(uuid: java.util.UUID): Boolean = true
+        }
+    }
+
+    @Test fun `DRM and extensionless DASH survive controller serialization without publishing credentials`() {
+        val headers = mutableMapOf("Authorization" to "Bearer license-secret")
+        val original = PlaybackItems.build("opaque-id", "Protected channel", "https://video.test/opaque?stream-secret",
+            headers = mapOf("Authorization" to "Bearer stream-secret"),
+            drm = DrmConfig(DrmScheme.WIDEVINE, "https://license.test/acquire?license-secret", headers, multiSession = true),
+            mimeType = MimeTypes.APPLICATION_MPD)
+        headers["Authorization"] = "mutated"
+        val transported = MediaItem.fromBundle(original.toBundle())
+        assertNull(transported.localConfiguration)
+        val rebuilt = PlaybackItems.resolve(transported)
+        val native = requireNotNull(rebuilt.localConfiguration?.drmConfiguration)
+        assertEquals(C.WIDEVINE_UUID, native.scheme)
+        assertEquals("https://license.test/acquire?license-secret", native.licenseUri.toString())
+        assertEquals("Bearer license-secret", native.licenseRequestHeaders["Authorization"])
+        assertEquals("Bearer stream-secret", PlaybackItems.headers(rebuilt)["Authorization"])
+        assertEquals(MimeTypes.APPLICATION_MPD, rebuilt.localConfiguration?.mimeType)
+        assertTrue(native.multiSession)
+        assertTrue(native.forceDefaultLicenseUri)
+        assertFalse(native.playClearContentWithoutKey)
+        assertNull(rebuilt.mediaMetadata.extras)
+        assertNull(rebuilt.mediaMetadata.artworkUri)
+        assertEquals("opaque-id", rebuilt.mediaId)
+        assertEquals("Protected channel", rebuilt.mediaMetadata.title.toString())
+    }
+
+    @Test fun `unsupported and incomplete DRM cannot downgrade to an unprotected request`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PlaybackItems.build("bad", "Bad", "https://video.test/manifest.mpd", unsupportedReason = "Unsupported wrapper")
+        }
+        val original = PlaybackItems.build("id", "Protected", "https://video.test/manifest.mpd",
+            drm = DrmConfig(DrmScheme.CLEARKEY, "https://license.test/acquire"))
+        val missing = original.buildUpon().setRequestMetadata(original.requestMetadata.buildUpon()
+            .setExtras(Bundle(original.requestMetadata.extras).apply { remove(PlaybackItems.EXTRA_DRM) }).build()).build()
+        assertThrows(IllegalArgumentException::class.java) { PlaybackItems.resolve(missing) }
+        val malformed = MediaItem.fromBundle(original.toBundle())
+        malformed.requestMetadata.extras!!.getBundle(PlaybackItems.EXTRA_DRM)!!.putString("unexpected", "secret")
+        val failure = assertThrows(IllegalArgumentException::class.java) { PlaybackItems.resolve(malformed) }
+        assertFalse(failure.message.orEmpty().contains("secret"))
+    }
+
+    @Test fun `unsupported native container and Android TV boundaries fail before obtaining licenses`() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        // Robolectric imports optional manifest features as present; explicitly model a phone.
+        val packageManager = org.robolectric.Shadows.shadowOf(context.packageManager)
+        packageManager.setSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK, false)
+        @Suppress("DEPRECATION")
+        packageManager.setSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION, false)
+        val clearKeyHls = PlaybackItems.build("ck", "ClearKey", "https://video.test/master.m3u8",
+            drm = DrmConfig(DrmScheme.CLEARKEY, "https://license.test/acquire"))
+        assertThrows(IllegalArgumentException::class.java) { PlaybackItems.requireSupported(context, clearKeyHls) }
+        val playReadyPhone = PlaybackItems.build("pr", "PlayReady", "https://video.test/manifest.mpd",
+            drm = DrmConfig(DrmScheme.PLAYREADY, "https://license.test/acquire"))
+        val failure = assertThrows(IllegalArgumentException::class.java) { PlaybackItems.requireSupported(context, playReadyPhone) }
+        assertTrue("Expected the Android TV gate, received: ${failure.message}", failure.message.orEmpty().contains("Android TV"))
+    }
+
     @Test fun `HTTP credentials are source scoped and are absent from public metadata`() {
         val input = mutableMapOf("Authorization" to "Bearer first")
         val first = PlaybackItems.build("first", "Channel one", "https://host.test/one.m3u8?secret=one", input)

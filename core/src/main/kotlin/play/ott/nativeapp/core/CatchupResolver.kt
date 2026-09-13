@@ -11,7 +11,9 @@ object CatchupResolver {
     fun resolve(entry: MediaEntry, programme: Programme, nowMillis: Long = System.currentTimeMillis()): PlaybackStream? {
         val catchup = entry.catchup ?: return null
         if (entry.kind != MediaKind.LIVE || programme.startMillis >= nowMillis || programme.endMillis <= programme.startMillis) return null
-        if (entry.epgId.isNotBlank() && programme.channelId != entry.epgId) return null
+        // Match the catalogue's case-insensitive XMLTV lookup and its display-name fallback.
+        if (entry.epgId.isNotBlank() && !programme.channelId.equals(entry.epgId, ignoreCase = true) &&
+            !programme.channelId.equals(entry.name, ignoreCase = true)) return null
         if (catchup.days > 0 && nowMillis - programme.startMillis > catchup.days * 86_400_000.0) return null
         val start = programme.startMillis / 1000
         val end = minOf(programme.endMillis, nowMillis) / 1000

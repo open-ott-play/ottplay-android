@@ -40,6 +40,7 @@ class NativeRepository(private val context: Context) {
     private fun validateSource(source: SourceConfig) {
         require(source.id.isNotBlank() && source.name.isNotBlank()) { "Укажите название источника" }
         require(source.id.length <= 160 && source.name.length <= 200) { "Слишком длинное название" }
+        require(source.catchupDaysFallback.isFinite() && source.catchupDaysFallback in 0.0..3650.0) { "Invalid archive duration" }
         val scheme = Uri.parse(source.url).scheme
         require(scheme in setOf("http", "https", "content") || source.url == DEMO_URL) { "Unsupported source address" }
         if (scheme == "http" || scheme == "https") require(!Uri.parse(source.url).host.isNullOrBlank()) { "Missing source host" }
@@ -116,26 +117,28 @@ class NativeRepository(private val context: Context) {
         require(backup.version == 1) { "Неизвестная версия настроек" }
         require(backup.sources.size <= 100) { "Слишком много источников" }
         require(backup.sources.map { it.id }.distinct().size == backup.sources.size) { "Повторяются идентификаторы источников" }
-        backup.sources.forEach { source ->
-            validateSource(source)
-            require(source.url.startsWith("https://") || source.url.startsWith("http://") || source.url == DEMO_URL) {
-                "Файловые источники нужно выбрать заново на этом устройстве"
-            }
+        backup.sources.forEach(::validateSource)
+        if (legacy == null) validateBackupPreferences(backup.preferences)
+        // A persisted SAF permission belongs to one installation. Skip only these valid sources;
+        // a mixed backup must still restore its network accounts and playback positions.
+        val fileSources = backup.sources.filter { Uri.parse(it.url).scheme == "content" }
+        val importedSources = backup.sources - fileSources.toSet()
+        val notes = legacy?.notes.orEmpty() + fileSources.map {
+            "Локальный плейлист «${it.name}» нужно выбрать заново через системный диалог."
         }
         // Validate the complete import before writing any credentials.
-        withContext(Dispatchers.IO) { refreshMutex.withLock { sourceMutex.withLock {
+        val sourceIds = withContext(Dispatchers.IO) { refreshMutex.withLock { sourceMutex.withLock {
             val merged = vault.read().associateBy { it.id }.toMutableMap()
-            backup.sources.forEach { source ->
+            require((merged.keys + importedSources.map { it.id }).size <= 100) { "Слишком много источников" }
+            importedSources.forEach { source ->
                 if (merged[source.id] != source) db.delete(source.id)
                 merged[source.id] = source
             }
-            vault.write(merged.values.toList())
+            if (importedSources.isNotEmpty()) vault.write(merged.values.toList())
+            merged.keys.toSet()
         }}}
-        preferences.update { old -> old.copy(
-            favorites = old.favorites + backup.preferences.favorites,
-            backgroundPlayback = backup.preferences.backgroundPlayback
-        )}
-        return ImportResult(backup.sources.size, legacy?.notes.orEmpty())
+        if (legacy == null) preferences.update { old -> mergeBackupPreferences(old, backup.preferences, sourceIds) }
+        return ImportResult(importedSources.size, notes)
     }
 
     companion object {

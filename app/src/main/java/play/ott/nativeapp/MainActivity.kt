@@ -156,7 +156,6 @@ class MainActivity : ComponentActivity() {
         if (!pip) setFullscreen(fullScreen)
     }
     override fun onStop() {
-        model.savePositionOnStop()
         if (!isChangingConfigurations && !isInPictureInPictureMode && !model.state.value.backgroundPlayback) controller?.pause()
         super.onStop()
     }

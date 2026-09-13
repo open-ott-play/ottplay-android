@@ -6,6 +6,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
+import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
+import androidx.media3.exoplayer.drm.FrameworkMediaDrm
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
@@ -24,9 +26,21 @@ internal class ItemMediaSourceFactory(context: Context, private val client: OkHt
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val resolved = PlaybackItems.resolve(mediaItem)
+        PlaybackItems.requireSupported(context, resolved)
         val http = httpFactoryFor(resolved)
         val factory = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))
-        drmProvider?.let(factory::setDrmSessionManagerProvider)
+        val config = PlaybackItems.drm(resolved)
+        if (drmProvider != null) {
+            factory.setDrmSessionManagerProvider(requireNotNull(drmProvider))
+        } else if (config != null) {
+            val builder = DefaultDrmSessionManager.Builder()
+                .setUuidAndExoMediaDrmProvider(PlaybackItems.uuid(config.scheme), FrameworkMediaDrm.DEFAULT_PROVIDER)
+                .setMultiSession(config.multiSession)
+                .setPlayClearSamplesWithoutKeys(false)
+            errorPolicy?.let(builder::setLoadErrorHandlingPolicy)
+            val manager = builder.build(ScopedDrmCallback(config, client))
+            factory.setDrmSessionManagerProvider { manager }
+        }
         errorPolicy?.let(factory::setLoadErrorHandlingPolicy)
         return factory.createMediaSource(resolved)
     }

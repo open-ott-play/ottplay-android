@@ -38,6 +38,7 @@ class PlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     private var sessionPlayer: ChannelNavigationPlayer? = null
     private var httpClient: OkHttpClient? = null
+    private var progress: PlaybackProgressRecorder? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
@@ -58,6 +59,7 @@ class PlaybackService : MediaSessionService() {
             .build()
         player = exoPlayer
         val repository = (application as OttplayApplication).repository
+        progress = PlaybackProgressRecorder(exoPlayer, serviceScope, repository.preferences.resumeWriter)
         var queueSource: SourceConfig? = null
         val navigationPlayer = ChannelNavigationPlayer(
             delegate = StopClearsPlaylistPlayer(exoPlayer),
@@ -77,6 +79,7 @@ class PlaybackService : MediaSessionService() {
                 found
             },
             resolve = { entry ->
+                require(entry.playbackUnsupportedReason == null) { "Unsupported playback configuration" }
                 val source = repository.sources().first { it.id == entry.sourceId }
                 check(source == queueSource) { "Source changed" }
                 check(repository.cached(source.id).entries.firstOrNull { it.id == entry.id } == entry) { "Catalogue changed" }
@@ -88,6 +91,7 @@ class PlaybackService : MediaSessionService() {
                 mediaSession?.sendError(SessionError(SessionError.ERROR_IO,
                     "Не удалось переключить канал. Проверьте подключение и доступность источника."))
             },
+            validate = { PlaybackItems.requireSupported(this, it) },
         )
         sessionPlayer = navigationPlayer
         val builder = MediaSession.Builder(this, navigationPlayer).setCallback(SessionCallback())
@@ -104,6 +108,8 @@ class PlaybackService : MediaSessionService() {
     // MediaSessionService's default onTaskRemoved retains ongoing playback, and stops an idle
     // service. Do not couple this to Activity onStop/onDestroy or store Activity references here.
     override fun onDestroy() {
+        progress?.close()
+        progress = null
         mediaSession?.release()
         mediaSession = null
         serviceScope.cancel()

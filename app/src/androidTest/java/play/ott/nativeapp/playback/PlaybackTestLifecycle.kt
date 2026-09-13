@@ -11,7 +11,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import play.ott.nativeapp.MainActivity
+import play.ott.nativeapp.OttplayApplication
 
 /** Completes asynchronous Android teardown before another test reuses the media notification. */
 @UnstableApi
@@ -50,6 +53,11 @@ internal object PlaybackTestLifecycle {
             }
             (!serviceRunning && mediaNotifications.isEmpty()) to
                 "serviceRunning=$serviceRunning, mediaNotificationIds=${mediaNotifications.map { it.id }}"
+        }
+        runBlocking {
+            withTimeout(10_000) {
+                (context.applicationContext as OttplayApplication).repository.preferences.resumeWriter.awaitIdle()
+            }
         }
     }
 

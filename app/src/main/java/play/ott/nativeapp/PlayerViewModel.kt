@@ -5,15 +5,12 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import play.ott.nativeapp.core.*
@@ -37,7 +34,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var loadGeneration = 0L
     private var pending: PendingPlay? = null
     private data class PendingPlay(val entry: MediaEntry, val stream: PlaybackStream, val positionMs: Long)
-    private data class ResumeCheckpoint(val entryId: String, val positionMs: Long)
     private val listener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
             mutableState.update { it.copy(error = "Ошибка воспроизведения (" + error.errorCodeName + "). Попробуйте другой поток или повторите подключение.") }
@@ -64,19 +60,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 mutableState.update { it.copy(isBusy = false, error = "Не удалось прочитать сохранённые источники. Данные не удалены.") }
             }
         }
-        viewModelScope.launch {
-            while (isActive) {
-                delay(10_000)
-                savePosition()
-            }
-        }
     }
 
     fun attachController(value: MediaController) {
         controller?.removeListener(listener)
         controller = value
         value.addListener(listener)
-        pending?.let { pending = null; begin(it) }
+        pending?.let {
+            pending = null
+            try { begin(it) } catch (error: Exception) { showError(error) }
+        }
         restorePlaybackEntry(value, value.currentMediaItem)
     }
 
@@ -237,13 +230,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun play(entry: MediaEntry, resolved: PlaybackStream? = null) {
+        if (entry.playbackUnsupportedReason != null) {
+            mutableState.update { it.copy(error = "Настройка DRM или формата этой записи не поддерживается. Текущее воспроизведение продолжается.") }
+            return
+        }
         if (entry.kind == MediaKind.SERIES) { dispatch(AppAction.OpenSeries(entry)); return }
         playJob?.cancel()
         pending = null
         resolvingSourceId = entry.sourceId
         val generation = ++playGeneration
         playJob = operation {
-            savePosition()
             val source = repository.sources().first { it.id == entry.sourceId }
             val stream = resolved ?: repository.stream(source, entry)
             val position = if (entry.kind == MediaKind.LIVE) 0L else repository.preferences.data.first().resumePositions[entry.id] ?: 0L
@@ -264,16 +260,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val item = PlaybackItems.build(
             id = request.entry.id, title = request.entry.name, url = request.stream.url,
             headers = request.stream.headers, artwork = request.entry.logo.takeIf { it.isNotBlank() },
-            isLive = request.entry.kind == MediaKind.LIVE, startPositionMs = request.positionMs
+            isLive = request.entry.kind == MediaKind.LIVE, startPositionMs = request.positionMs,
+            drm = request.entry.drm, mimeType = request.entry.mimeType ?: request.stream.mimeType,
+            unsupportedReason = request.entry.playbackUnsupportedReason,
         ).let { built ->
             val extras = Bundle(built.requestMetadata.extras ?: Bundle()).apply {
                 putString(EXTRA_ENTRY, entryJson.encodeToString(request.entry))
             }
             built.buildUpon()
                 .setRequestMetadata(built.requestMetadata.buildUpon().setExtras(extras).build())
-                .apply { if (request.stream.mimeType != null) setMimeType(request.stream.mimeType) }
                 .build()
         }
+        PlaybackItems.requireSupported(getApplication(), item)
         player.setMediaItem(item, PlaybackItems.startPositionMs(item))
         player.prepare()
         player.play()
@@ -288,41 +286,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun stop() {
         playJob?.cancel(); ++playGeneration; pending = null; resolvingSourceId = null
-        savePositionOnStop()
         controller?.stop(); controller?.clearMediaItems()
         mutableState.update { it.copy(playingEntry = null) }
-    }
-
-    private fun captureResumeCheckpoint(): ResumeCheckpoint? {
-        val player = controller ?: return null
-        val entry = state.value.playingEntry ?: return null
-        if (entry.kind == MediaKind.LIVE || player.currentMediaItem?.mediaId != entry.id) return null
-        val position = player.currentPosition.coerceAtLeast(0)
-        val duration = player.duration
-        val resume = if (duration != C.TIME_UNSET && duration > 0 && duration - position < 5000) 0 else position
-        return ResumeCheckpoint(entry.id, resume)
-    }
-
-    /** Capture before clearMediaItems/release; Activity destruction must not cancel the disk write. */
-    fun savePositionOnStop() { enqueuePositionSave() }
-
-    suspend fun savePosition() { enqueuePositionSave()?.await() }
-
-    private fun enqueuePositionSave(): Deferred<Unit>? {
-        val checkpoint = captureResumeCheckpoint() ?: return null
-        return resumeScope.async {
-            try {
-                resumeMutex.withLock {
-                    repository.preferences.update { preferences ->
-                        val values = LinkedHashMap(preferences.resumePositions)
-                        values.remove(checkpoint.entryId); values[checkpoint.entryId] = checkpoint.positionMs
-                        while (values.size > 500) values.remove(values.keys.first())
-                        preferences.copy(resumePositions = values)
-                    }
-                }
-            } catch (e: CancellationException) { throw e }
-            catch (_: Exception) { mutableState.update { it.copy(notice = "Не удалось сохранить позицию воспроизведения.") } }
-        }
     }
 
     fun importPlaylist(uri: Uri, name: String) = operation {
@@ -338,10 +303,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             getApplication<Application>().contentResolver.openInputStream(uri)?.use { play.ott.nativeapp.data.readBounded(it, 4 * 1024 * 1024).decodeToString() }
                 ?: error("Файл недоступен")
         }
+        // Import may replace accounts. A detached controller must not later start a URL resolved
+        // with the previous credentials; currently playing media remains owned by the service.
+        playJob?.cancelAndJoin()
+        ++playGeneration
+        pending = null
+        resolvingSourceId = null
+        loadJob?.cancelAndJoin()
         val result = repository.importSettings(text)
         val sources = repository.sources()
         mutableState.update { it.copy(sources = sources, notice = "Импортировано источников: " + result.count + if (result.notes.isEmpty()) "" else ". " + result.notes.joinToString(" ")) }
-        sources.firstOrNull()?.let { load(it.id, false) }
+        val selected = repository.preferences.data.first().selectedSourceId
+        (sources.firstOrNull { it.id == selected } ?: sources.firstOrNull())?.let { load(it.id, false) }
     }
 
     fun exportSettings(uri: Uri) = operation {
@@ -372,8 +345,5 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private companion object {
         const val EXTRA_ENTRY = "play.ott.nativeapp.entry"
         val entryJson = Json { ignoreUnknownKeys = true }
-        // Only short DataStore writes outlive the screen; this scope never owns a player/activity.
-        val resumeScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val resumeMutex = Mutex()
     }
 }

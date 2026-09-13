@@ -3,6 +3,9 @@ package play.ott.nativeapp.ui
 import android.content.Context
 import android.view.KeyEvent
 import android.view.ViewGroup
+import android.view.View
+import android.content.res.Configuration
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,8 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,15 +28,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.TrackSelectionDialogBuilder
 import play.ott.nativeapp.core.MediaEntry
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -55,6 +60,32 @@ internal fun NativePlayerPane(
     var buffering by remember(controller) { mutableStateOf(controller == null || controller.playbackState == Player.STATE_BUFFERING) }
     var playbackError by remember(controller, entry.id) { mutableStateOf(controller?.playerError?.errorCodeName) }
     var optionsOpen by remember { mutableStateOf(false) }
+    var trackType by remember { mutableStateOf<Int?>(null) }
+    var nativeView by remember { mutableStateOf<RemotePlayerView?>(null) }
+    var controlsVisible by remember { mutableStateOf(false) }
+    val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+    val context = LocalContext.current
+    BackHandler(enabled = isTv && controller != null && controlsVisible && !optionsOpen && trackType == null && !inPictureInPicture) {
+        nativeView?.hideController()
+    }
+    if (optionsOpen && !inPictureInPicture) PlaybackOptionsDialog(
+        controller, resizeMode,
+        onResize = { resizeMode = it },
+        onTracks = { optionsOpen = false; trackType = it },
+        onPictureInPicture, onStop,
+        onDismiss = { optionsOpen = false; if (isTv) nativeView?.focusPlaybackControl() },
+    )
+    DisposableEffect(trackType, controller, entry.id) {
+        val type = trackType
+        val dialog = if (type != null && controller != null && controller.isCommandAvailable(Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS)) {
+            TrackSelectionDialogBuilder(context, if (type == C.TRACK_TYPE_AUDIO) "Аудиодорожка" else "Субтитры", controller, type)
+                .setShowDisableOption(type == C.TRACK_TYPE_TEXT).build().apply {
+                    setOnDismissListener { trackType = null; if (isTv) nativeView?.focusPlaybackControl() }
+                    show()
+                }
+        } else null
+        onDispose { dialog?.dismiss() }
+    }
     DisposableEffect(controller) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -83,31 +114,21 @@ internal fun NativePlayerPane(
                 modifier = Modifier.weight(1f).padding(vertical = 12.dp),
             )
             ActionButton(if (fullscreen) "Назад" else "На весь экран", onFullscreen, compact = true)
-            Box {
-                ActionButton("Ещё", { optionsOpen = true }, compact = true)
-                DropdownMenu(expanded = optionsOpen, onDismissRequest = { optionsOpen = false }) {
-                    DropdownMenuItem(text = { Text("Картинка в картинке") }, onClick = { optionsOpen = false; onPictureInPicture() })
-                    listOf(
-                        AspectRatioFrameLayout.RESIZE_MODE_FIT to "Вписать в экран",
-                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Заполнить с обрезкой",
-                        AspectRatioFrameLayout.RESIZE_MODE_FILL to "Растянуть",
-                    ).forEach { (mode, label) ->
-                        DropdownMenuItem(text = { Text(label + if (resizeMode == mode) " ✓" else "") }, onClick = { resizeMode = mode; optionsOpen = false })
-                    }
-                    DropdownMenuItem(text = { Text("Закрыть плеер") }, onClick = { optionsOpen = false; onStop() })
-                }
-            }
+            ActionButton("Ещё", { optionsOpen = true }, Modifier.testTag("player-options"), compact = true)
         }
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             AndroidView(
                 factory = { context ->
                     RemotePlayerView(context).apply {
+                        nativeView = this
+                        openOptions = { optionsOpen = true }
                         tag = "ott-native-video"
                         layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                         player = controller
                         useController = true
                         controllerAutoShow = true
                         controllerShowTimeoutMs = 4000
+                        if (isTv) setControllerAnimationEnabled(false)
                         setShowSubtitleButton(true)
                         setShowFastForwardButton(true)
                         setShowRewindButton(true)
@@ -117,8 +138,9 @@ internal fun NativePlayerPane(
                         setKeepContentOnPlayerReset(true)
                         isFocusable = true
                         isFocusableInTouchMode = true
-                        contentDescription = "Видеоплеер. Нажмите ОК, чтобы показать управление и настройки дорожек."
-                        post { requestFocus() }
+                        contentDescription = "Видеоплеер. ОК — управление, меню — дорожки и параметры."
+                        setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { controlsVisible = it == View.VISIBLE })
+                        if (isTv) post { focusPlaybackControl() }
                     }
                 },
                 update = { view ->
@@ -126,7 +148,7 @@ internal fun NativePlayerPane(
                     view.resizeMode = resizeMode
                     view.useController = !inPictureInPicture
                 },
-                onRelease = { it.player = null },
+                onRelease = { it.player = null; if (nativeView === it) nativeView = null },
                 modifier = Modifier.fillMaxSize(),
             )
             if (!inPictureInPicture && (controller == null || buffering)) CircularProgressIndicator()
@@ -148,7 +170,18 @@ internal fun NativePlayerPane(
 /** Channel keys remain in the native media-session path, including lazy provider resolution. */
 @androidx.annotation.OptIn(UnstableApi::class)
 private class RemotePlayerView(context: Context) : PlayerView(context) {
+    var openOptions: () -> Unit = {}
+
+    fun focusPlaybackControl() {
+        showController()
+        findViewById<View>(androidx.media3.ui.R.id.exo_play_pause).requestFocus()
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_MENU) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) openOptions()
+            return true
+        }
         val currentPlayer = player ?: return super.dispatchKeyEvent(event)
         val forward = event.keyCode == KeyEvent.KEYCODE_CHANNEL_UP
         val backward = event.keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN

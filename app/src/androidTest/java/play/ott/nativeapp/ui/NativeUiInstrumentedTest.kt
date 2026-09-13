@@ -19,6 +19,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.pressKey
@@ -78,11 +79,12 @@ class NativeUiInstrumentedTest {
         compose.onNodeWithText("Добавить по ссылке").performScrollTo().activateForDevice()
         compose.onNodeWithText("Название источника").performTextInput("Новая библиотека")
         compose.onNodeWithText("Адрес плейлиста").performTextInput("https://example.com/new.m3u")
+        compose.onNodeWithText("Архив, часов (если нет в плейлисте)").performScrollTo().performTextInput("48")
         compose.onNodeWithText("Добавить", substring = false).activateForDevice()
         compose.runOnIdle {
             assertTrue(actions.any { it == AppAction.AddDemo })
             assertEquals(entry, (actions.first { it is AppAction.Play } as AppAction.Play).entry)
-            assertTrue(actions.any { it is AppAction.SaveSource && it.source.name == "Новая библиотека" && it.source.url == "https://example.com/new.m3u" })
+            assertTrue(actions.any { it is AppAction.SaveSource && it.source.name == "Новая библиотека" && it.source.url == "https://example.com/new.m3u" && it.source.catchupDaysFallback == 2.0 })
         }
     }
 
@@ -98,12 +100,40 @@ class NativeUiInstrumentedTest {
                 )
             }
         }
-        compose.onNodeWithText("Эфир").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithText("Фильмы").assertIsFocused()
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionUp) }
         compose.onNodeWithText("Эфир").assertIsFocused()
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
         compose.onNodeWithText("Фильмы").assertIsFocused()
         compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         compose.onNodeWithTag("catalog-item-${entry.id}").assertIsDisplayed()
+    }
+
+    @Test fun televisionEntersANewTabAfterThePreviousGridWasScrolled() {
+        val television = Configuration(InstrumentationRegistry.getInstrumentation().targetContext.resources.configuration).apply {
+            uiMode = (uiMode and Configuration.UI_MODE_TYPE_MASK.inv()) or Configuration.UI_MODE_TYPE_TELEVISION
+        }
+        val entries = (0 until 80).flatMap { index -> listOf(
+            entry.copy(id = "live-$index", kind = MediaKind.LIVE),
+            entry.copy(id = "movie-$index", kind = MediaKind.MOVIE),
+        ) }
+        compose.setContent {
+            CompositionLocalProvider(LocalConfiguration provides television) {
+                OttNativeApp(AppUiState(sources = listOf(source), selectedSourceId = source.id, entries = entries),
+                    {}, null, {}, {})
+            }
+        }
+        compose.onNodeWithTag("library-grid").performScrollToIndex(60)
+        compose.onNodeWithTag("library-tab-LIVE").assertIsFocused()
+        // Deliver hardware events so a phone running the TV layout also leaves touch input mode.
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-tab-MOVIES").assertIsFocused()
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+        compose.waitForIdle()
+        compose.onNodeWithTag("catalog-item-movie-0").assertIsDisplayed().assertIsFocused()
     }
 
     private fun SemanticsNodeInteraction.activateForDevice() {

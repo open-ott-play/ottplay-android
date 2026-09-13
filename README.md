@@ -2,7 +2,7 @@
 
 A standalone Android app for personal IPTV playlists, movies, and series. The interface uses Kotlin and Jetpack Compose; playback runs through Android Media3 / ExoPlayer. The app supports touch controls and Android TV remotes.
 
-This is a separate product with application ID `play.ott.foss.nativeapp`. It can be installed alongside `ottplay-foss`. The JavaScript player, WebView, Capacitor and Node.js are not required to run or build it. The project version is `0.1.0`; the presence of a feature in the code does not mean that every TV, codec or provider service has been tested.
+This is a separate product with application ID `play.ott.foss.nativeapp`. It can be installed alongside `ottplay-foss`. Signed previews have a separate ID, `play.ott.foss.nativeapp.preview`; stable preview signing is configured separately from production. The JavaScript player, WebView, Capacitor and Node.js are not required to run or build it. The project version is `0.2.0`; the presence of a feature in the code does not mean that every TV, codec or provider service has been tested.
 
 ## Getting started
 
@@ -15,23 +15,23 @@ The app does not provide a subscription, a built-in commercial catalog, or permi
 
 ## Implemented features
 
-- **M3U:** HTTP(S) loading and import of a selected file, groups, names, logos, `tvg-id`, XMLTV and standard HTTP headers. An HLS manifest is handled as a single stream. The `default`, `append` and Flussonic catchup templates and known time substitutions are supported.
+- **M3U:** HTTP(S) downloads and selected-file imports, groups, names, logos, `tvg-id`, XMLTV, and standard HTTP headers. An HLS manifest is treated as one stream. Catch-up supports `default`, `append`, Flussonic, and recognized time placeholders; a fallback archive duration in hours can be set when the playlist has no catch-up tags.
 - **Xtream:** separate APIs for live TV, movies, series, and episodes, plus the older combined `player_api.php` response containing `live_streams` and `categories`. Catch-up uses server time. Unsupported optional sections returning HTTP 404/405/501 are reported explicitly; authentication, network, and server errors are not treated as successful empty catalogs.
 - **Stalker:** classic MAG handshake, profile, paginated channel lists, and `create_link`. The older FOSS JSON-RPC protocol uses an explicitly configured endpoint ending in `/api/`. These are different protocols; see the [migration guide](docs/MIGRATION.md).
-- **Interface:** Compose layouts for touch and TV, search, groups, favorites, movies, seasons and episodes, the program guide and access to available catchup programs.
-- **Playback:** Media3 `MediaSessionService`, control through the system media session, background playback and a separate stop action. System PiP is used on devices that support it. This is PiP for the current stream, not a second channel playing simultaneously.
+- **Interface:** Compose layouts for touch and TV, search, groups, favorites, movies, seasons and episodes, programme listings, and available catch-up playback. TV receives focus at launch and restores it when returning from the player. The native player menu selects available audio tracks, subtitles, speed, and scaling; the remote's Menu key opens it.
+- **Playback:** a Media3 `MediaSessionService`, system media-session controls, background playback, and explicit stop. System PiP is available on supported devices. It displays the current stream, not a second channel playing simultaneously. The service saves movie positions on pause, seek, item changes, and every five seconds, including while the screen is closed; completed movies restart from the beginning.
 - **Data:** a local SQLite catalog and EPG. Source settings, saved stream URLs, and EPG URLs use AES-GCM encryption with an Android Keystore key. Source data is excluded from Android backup. Selected sources can be exported and imported as JSON.
 - **EPG refresh:** WorkManager requests periodic work every six hours on an unmetered network. Android may defer execution; the interval is not a guaranteed schedule. Channel-list refresh is a separate action in the app.
 
 ## Compatibility boundaries
 
-User-provided M3U and Xtream sources and the two described Stalker protocols are implemented natively. The branded and proprietary adapters from the old `ottplay-foss`, dealer/cloud activation, specific server commands and individual portal behavior have not all been ported automatically. This is not a claim of complete behavioral compatibility with the old project.
+Personal M3U playlists, Xtream, and the two Stalker protocols described above are implemented natively. The proprietary adapters, dealer/cloud activation, custom server commands, and portal-specific behavior of the older `ottplay-foss` project are not transferred automatically. Full behavioral compatibility with the old project is not claimed. See [PROVIDER-COMPATIBILITY.md](docs/PROVIDER-COMPATIBILITY.md) for migration examples using standard contracts.
 
-Kodi DRM license directives are not imported: the catalog displays a notice about them. Widevine/PlayReady configuration, DRM license acquisition and paid protected services are not implemented here. Playback of unencrypted HLS, DASH and files also depends on the format and the device's decoders. The presence of the Media3 library does not guarantee support for every stream.
+Supported Kodi license properties become native Media3 configurations for Widevine, PlayReady, and ClearKey. License URLs and headers are isolated from stream requests; unknown license transformations are rejected explicitly. Compatibility depends on the device's DRM module, container, provider license, and decoders. Unit tests do not establish acceptance for paid services or hardware DRM. The precise contract is documented in [docs/DRM.md](docs/DRM.md).
 
 HTTP is allowed for personal sources and does not encrypt transmitted data. Settings exports are plain JSON containing source URLs and credentials. Treat an export as a file containing passwords. Local-storage encryption does not encrypt exported files.
 
-Preparing for publication on Google Play, release signing and obtaining rights to the content used are separate steps. This repository does not claim store approval or Android TV certification.
+Preparing for publication on Google Play and obtaining rights to the content used are separate steps. A separate workflow is ready for signed APK/AAB builds, with version, signature and complete phone/TV matrix checks; it requires the selected channel's signing key to be configured: [docs/RELEASING.md](docs/RELEASING.md). This repository does not claim store approval or Android TV certification.
 
 ## Building
 
@@ -50,7 +50,7 @@ The release build uses R8 and resource shrinking:
 ./gradlew :app:assembleRelease
 ```
 
-Without custom signing configuration, the result is `app/build/outputs/apk/release/app-release-unsigned.apk`. It cannot be installed as a ready-to-use update. Retaining the same signing key is necessary for future updates to the installed application.
+`./gradlew :app:bundleRelease` also builds an AAB. Without an explicit signing configuration, the APK output is `app/build/outputs/apk/release/app-release-unsigned.apk`. It is not an installable update. Keep the same signing key for future updates to an installed app.
 
 To run instrumentation tests, start a dedicated emulator or connect a test device:
 
@@ -68,10 +68,10 @@ These tests exercise the app, media service, bundled-video decoding, Compose UI,
 
 ## CI and validation
 
-[Verified matrix](https://github.com/open-ott-play/ottplay-android/actions/runs/34746025351): 44 JVM tests, 11 tests on a phone with API 35 and 11 on actual Android TV API 36; all passed without failures or skips. Validation details and limits: [docs/VALIDATION.md](docs/VALIDATION.md).
+Version 0.2 passed 68 local JVM tests, 16 Android API 35 tests, and 10 release-tooling checks. Coverage includes real ClearKey DRM, interaction with the actual Activity, and position persistence while the screen is closed. Details and hosted CI results are in [docs/VALIDATION-0.2.md](docs/VALIDATION-0.2.md). The first phone/TV matrix history is preserved in [docs/VALIDATION.md](docs/VALIDATION.md).
 
 The [Android workflow](.github/workflows/android.yml) runs core and Android unit tests, lint, and debug/release APK builds on pushes and pull requests. APKs and reports are uploaded as run artifacts. [Dependabot](.github/dependabot.yml) maintains GitHub Actions and Gradle dependencies.
 
 For manual workflow runs, `run_device_tests` enables two equally required jobs: phone API 35 (`google_apis`, `x86_64`, `pixel_7` profile) and Android TV API 36 (`android-tv`, `x86_64`, `tv_1080p` profile). The TV job uses a separate TV OS image; both jobs run the complete instrumentation suite and retain separate reports. Package `system-images;android-36;android-tv;x86_64`, revision 4, was verified in the stable `sdkmanager --list --channel=0` catalog. Emulator jobs are disabled by default. The workflow defines the validation procedure; each run's reports establish its results. Host tests, emulator tests, and physical-device experience are different levels of evidence.
 
-Migration from the old application is described in [docs/MIGRATION.md](docs/MIGRATION.md). Completed checks, results and screenshots of the actual Android interface are collected in [docs/VALIDATION.md](docs/VALIDATION.md).
+Migration from the older app is described in [docs/MIGRATION.md](docs/MIGRATION.md). Completed checks, results, and screenshots of the actual Android interface are collected in [docs/VALIDATION-0.2.md](docs/VALIDATION-0.2.md).

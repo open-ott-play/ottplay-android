@@ -22,7 +22,7 @@ class LegacySourceImporterTest {
         assertEquals("https://portal.test/stalker_portal/api/", result.sources[2].url)
         assertTrue(result.sources[2].headers.isEmpty())
         assertTrue(result.notes.any { it.contains("локальный файл") })
-        assertTrue(result.notes.any { it.contains("часы архива") })
+        assertEquals(1.0, result.sources[0].catchupDaysFallback)
         assertFalse(result.toString().contains("private"))
         assertFalse(result.toString().contains("do-not-import"))
     }

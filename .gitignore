@@ -5,5 +5,7 @@ local.properties
 .idea/
 *.iml
 *.jks
+__pycache__/
+*.py[cod]
 *.keystore
 captures/

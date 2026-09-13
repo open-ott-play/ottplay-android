@@ -163,7 +163,7 @@ class StorageInstrumentedTest {
             sourceB.copy(kind = SourceKind.XTREAM, username = "", password = ""),
             sourceB.copy(headers = mapOf("Authorization" to "ok\r\nInjected: value")),
             sourceB.copy(headers = mapOf("Host" to "different.invalid")),
-            sourceB.copy(url = "content://documents/no-grant"),
+            sourceB.copy(url = "file:///private/no-grant.m3u"),
         )
         try {
             db.replace(sourceA.id, originalCatalog)
@@ -200,6 +200,46 @@ class StorageInstrumentedTest {
             assertEquals(secondCatalog, repository.cached(sourceB.id))
             assertEquals(preferencesBefore, repository.preferences.data.first())
             assertNoPlaintextCredentials()
+        } finally { db.close() }
+    }
+
+    @Test fun mixedBackupRestoresNetworkSourcesPreferencesAndResumeWhileReportingMissingFileGrant() = runBlocking {
+        val repository = NativeRepository(storage)
+        repository.save(sourceA)
+        val previous = repository.preferences.data.first()
+        val file = sourceB.copy(id = "local-file", url = "content://documents/tree/playlist")
+        val imported = UserPreferences(selectedSourceId = sourceB.id, favorites = setOf("backup-favorite"),
+            backgroundPlayback = false, resumePositions = mapOf("backup-movie" to 42_000L))
+        try {
+            val result = repository.importSettings(json.encodeToString(SettingsBackup(sources = listOf(sourceB, file), preferences = imported)))
+            assertEquals(1, result.count)
+            assertEquals(setOf(sourceA, sourceB), repository.sources().toSet())
+            assertTrue(result.notes.single().contains(file.name))
+            val restored = repository.preferences.data.first()
+            assertEquals(sourceB.id, restored.selectedSourceId)
+            assertTrue("backup-favorite" in restored.favorites)
+            assertEquals(42_000L, restored.resumePositions["backup-movie"])
+            assertFalse(restored.backgroundPlayback)
+            // A legacy sources-only dump has no native preferences; importing it must not reset them.
+            repository.importSettings("""{"M3Us":[{"www":"https://legacy.invalid/list.m3u"}]}""")
+            assertEquals(restored, repository.preferences.data.first())
+        } finally { repository.preferences.update { previous } }
+    }
+
+    @Test fun invalidResumeOffsetCannotReplaceSourceOrInvalidateCatalog() = runBlocking {
+        val repository = NativeRepository(storage)
+        repository.save(sourceA)
+        val previous = repository.preferences.data.first()
+        val db = CatalogDatabase(storage, vault)
+        val catalog = Catalog(listOf(entry(sourceA.id)))
+        try {
+            db.replace(sourceA.id, catalog)
+            val backup = SettingsBackup(sources = listOf(sourceA.copy(url = sourceB.url)),
+                preferences = UserPreferences(resumePositions = mapOf("movie" to -1)))
+            assertTrue(runCatching { repository.importSettings(json.encodeToString(backup)) }.isFailure)
+            assertEquals(listOf(sourceA), repository.sources())
+            assertEquals(catalog, repository.cached(sourceA.id))
+            assertEquals(previous, repository.preferences.data.first())
         } finally { db.close() }
     }
 

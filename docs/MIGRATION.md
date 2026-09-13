@@ -11,7 +11,7 @@ APK/AAB building and publication were removed from the `ottplay-foss` main branc
 - For classic Stalker / MAG, enter a `/c/` portal or an explicit `server/load.php` / `portal.php` endpoint and the MAC address registered with your provider. A `/c/` URL is normalized to `server/load.php` in the same portal directory. Protocol support does not guarantee compatibility with every provider's device and authentication checks.
 - The older FOSS Stalker provider uses a different protocol: JSON-RPC `handshake` / `get_channels`. Enter its complete endpoint, such as `https://portal.example/stalker_portal/api/`. Native import of an older configuration preserves this protocol choice.
 
-M3U headers from `#EXTVLCOPT`, `#EXTHTTP`, Kodi `stream_headers` and the URL suffix `|Header=Value` apply to the stream. Unsupported control characters and reserved headers are rejected. Kodi DRM license parameters are not converted into Widevine configuration; a notice is displayed when they are present.
+M3U headers from `#EXTVLCOPT`, `#EXTHTTP`, Kodi `stream_headers`, and the `|Header=Value` URL suffix apply to stream requests. Unsupported control characters and reserved headers are rejected. Supported Kodi DRM-license properties become native Media3 configurations. Unknown formats and request/response transformations are rejected; [DRM.md](DRM.md) documents the contract and device limitations.
 
 ## What an older backup contains
 
@@ -25,13 +25,13 @@ If you already have a separate JSON dump of the old storage, these keys are supp
 
 Each value may be a JSON object or a string containing JSON. Supported containers are `localStorage`, `storage`, and `values`. Import reads data; it does not execute scripts or contact the listed URLs until the source is refreshed.
 
-Old local paths do not become accessible to the new application: the file must be selected again. `rechours` as a separate catchup-depth override and `medUrl` from the old media library are not transferred; the import lists these limitations. Catchup in the new M3U player uses the playlist's own catchup tags. Old numeric IDs for favorite and blocked channels do not match the new IDs; those selections must be recreated.
+Old local paths do not become accessible to the new app; select the file again. `rechours` is imported as a fallback archive duration, with the playlist's own catch-up tags taking precedence. The source editor exposes this duration in hours for playlists without catch-up metadata. The old JSON media library's `medUrl` is not converted to M3U; import reports this limitation. Old numeric favorite and blocked-channel IDs do not match the new IDs, so those selections must be rebuilt.
 
 ## Exporting from the new app
 
-The new JSON export includes sources and supported user settings. It contains plaintext passwords and URLs with tokens. Local Android storage is protected by Keystore, but the export is a separate file: do not publish it, and delete unnecessary copies after migration.
+The new JSON export contains sources, favorites, the selected source, the background-playback setting, and movie/episode positions. It includes passwords and token-bearing URLs in plain text. Android's local storage is protected with Keystore, but the export is a separate file: do not publish it, and remove unneeded copies after migration.
 
-Import validates the contents before writing and merges sources by their IDs. Changing a source configuration invalidates its previous cache. For a file source on another device, select the M3U file again and grant Android access.
+Import validates the contents before writing and merges sources by ID. Changing a source configuration clears its previous cache. Local-file sources are skipped with a notice: select the M3U file again and grant Android access. This does not prevent network accounts in the same backup from being restored. Invalid values are checked before writing, so a malformed playback position cannot clear a source's cache. Older sources-only JSON leaves the newer user preferences unchanged.
 
 ## Checks before everyday use
 
@@ -40,3 +40,7 @@ Check every source you rely on: catalog loading, several channels in different f
 The bundled synthetic video checks local playback without an account or network. Its silent audio track does not establish audible background playback. Use an authorized source with sound to check that behavior.
 
 The native project does not port the full set of branded adapters, activation codes, dealer/cloud features or nonstandard extensions from the old JavaScript player. Widevine/PlayReady and DRM license acquisition are not implemented. A successful build or demo playback does not confirm these capabilities.
+
+## Installing the signed 0.2 preview
+
+Preview uses `play.ott.foss.nativeapp.preview`, separate from the debug/early 0.1 APK and future production app. To migrate, export settings from the previous installation and import them into preview. Passwords are in plaintext in the exported JSON; delete the unnecessary copy after migration. The same configured signing key is retained across subsequent previews; a new key is not generated on every CI run. Release procedure and required key configuration: [RELEASING.md](RELEASING.md).

@@ -1,0 +1,115 @@
+name: Signed Android release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Preview prerelease or production (requires separate production signing secrets)
+        required: true
+        default: preview
+        type: choice
+        options: [preview, production]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: signed-android-release-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Verify and sign ${{ inputs.channel }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    env:
+      RELEASE_CHANNEL: ${{ inputs.channel }}
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate version, immutable tag and exact-commit device matrix
+        run: python3 scripts/release.py check --channel "$RELEASE_CHANNEL"
+      - name: Read artifact version
+        id: version
+        run: python3 scripts/release.py metadata --channel "$RELEASE_CHANNEL"
+      - name: Test release safety boundaries
+        run: python3 -m unittest discover -s scripts/tests -v
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+      - name: Install compile SDK and signature tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - name: Load configured preview signing identity
+        if: inputs.channel == 'preview'
+        env:
+          PREVIEW_SIGNING_KEYSTORE_BASE64: ${{ secrets.PREVIEW_SIGNING_KEYSTORE_BASE64 }}
+          PREVIEW_SIGNING_STORE_PASSWORD: ${{ secrets.PREVIEW_SIGNING_STORE_PASSWORD }}
+          PREVIEW_SIGNING_KEY_ALIAS: ${{ secrets.PREVIEW_SIGNING_KEY_ALIAS }}
+          PREVIEW_SIGNING_KEY_PASSWORD: ${{ secrets.PREVIEW_SIGNING_KEY_PASSWORD }}
+          PREVIEW_SIGNING_CERT_SHA256: ${{ secrets.PREVIEW_SIGNING_CERT_SHA256 }}
+        run: python3 scripts/ci-prepare-signing.py
+      - name: Load configured production signing identity
+        if: inputs.channel == 'production'
+        env:
+          PREVIEW_SIGNING_CERT_SHA256: ${{ secrets.PREVIEW_SIGNING_CERT_SHA256 }}
+          RELEASE_SIGNING_KEYSTORE_BASE64: ${{ secrets.RELEASE_SIGNING_KEYSTORE_BASE64 }}
+          RELEASE_SIGNING_STORE_PASSWORD: ${{ secrets.RELEASE_SIGNING_STORE_PASSWORD }}
+          RELEASE_SIGNING_KEY_ALIAS: ${{ secrets.RELEASE_SIGNING_KEY_ALIAS }}
+          RELEASE_SIGNING_KEY_PASSWORD: ${{ secrets.RELEASE_SIGNING_KEY_PASSWORD }}
+          RELEASE_SIGNING_CERT_SHA256: ${{ secrets.RELEASE_SIGNING_CERT_SHA256 }}
+        run: python3 scripts/ci-prepare-signing.py
+      - name: Test, lint, build APK and AAB, verify signatures and versions
+        run: python3 scripts/release.py build --channel "$RELEASE_CHANNEL"
+      - name: Remove signing material from the runner
+        if: always()
+        run: rm -rf -- "${RUNNER_TEMP:?}/ottplay-release-signing"
+      - name: Upload signed artifacts and checksums
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ottplay-native-${{ steps.version.outputs.tag }}
+          path: build/distributions/${{ steps.version.outputs.tag }}/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: signed-release-validation
+          path: |
+            core/build/test-results/
+            app/build/test-results/
+            app/build/reports/lint-results-*.xml
+            app/build/outputs/mapping/
+          if-no-files-found: warn
+          retention-days: 30
+
+  publish:
+    name: Publish new version
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RELEASE_CHANNEL: ${{ inputs.channel }}
+      RELEASE_TAG: ${{ needs.build.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download only this run's verified signed artifacts
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "ottplay-native-$RELEASE_TAG" --dir "build/distributions/$RELEASE_TAG"
+      - name: Recheck source, version and checksums; publish without overwriting
+        run: python3 scripts/release.py publish --channel "$RELEASE_CHANNEL"

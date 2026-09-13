@@ -14,16 +14,19 @@ object M3uParser {
     fun parse(text: String, config: SourceConfig, baseUrl: String = config.url): Catalog {
         if (text.length > MAX_CATALOG_BYTES) throw ProviderException("Playlist exceeds the supported size limit")
         val lines = text.removePrefix("\uFEFF").lineSequence().map(String::trim).toList()
-        val notes = if (lines.any { line ->
-            line.startsWith("#KODIPROP:", true) && line.substringBefore('=').let {
-                it.contains(".license_", true) || it.endsWith(".drm", true) || it.contains(".drm_", true)
-            }
-        }) listOf("Плейлист содержит настройки DRM для Kodi. Их лицензии и ключи не импортируются; защищённые записи могут не воспроизводиться.")
-        else emptyList()
+        val notes = linkedSetOf<String>()
         if (lines.any { it.startsWith("#EXT-X-STREAM-INF:") || it.startsWith("#EXT-X-TARGETDURATION:") }) {
+            val kodi = KodiDrmParser()
+            lines.filter { it.startsWith("#KODIPROP:", true) }.forEach {
+                val property = it.substringAfter(':')
+                kodi.property(property.substringBefore('='), property.substringAfter('=', ""))
+            }
+            val drm = kodi.result()
             val url = httpUrl(baseUrl).toString()
             return Catalog(listOf(MediaEntry(stableId(config.id, url), config.id, config.name.ifBlank { "HLS stream" }, url,
-                headers = mergedHeaders(config.headers))), listOfNotNull(config.epgUrl.takeIf(String::isNotBlank)), notes)
+                headers = mergedHeaders(config.headers), drm = drm.drm, mimeType = "application/x-mpegURL",
+                playbackUnsupportedReason = drm.unsupportedReason)), listOfNotNull(config.epgUrl.takeIf(String::isNotBlank)),
+                listOfNotNull(drm.unsupportedReason))
         }
         val entries = linkedMapOf<String, MediaEntry>()
         val epgUrls = linkedSetOf<String>()
@@ -34,10 +37,11 @@ object M3uParser {
         var duration = -1.0
         var group = ""
         var entryHeaders = emptyMap<String, String>()
+        var kodi = KodiDrmParser()
         var hasMetadata = false
         var invalidMetadata = false
         var index = 0
-        fun reset() { attrs = emptyMap(); name = ""; duration = -1.0; entryHeaders = emptyMap(); hasMetadata = false; invalidMetadata = false }
+        fun reset() { attrs = emptyMap(); name = ""; duration = -1.0; entryHeaders = emptyMap(); kodi = KodiDrmParser(); hasMetadata = false; invalidMetadata = false }
         while (index < lines.size) {
             val line = lines[index++]
             if (line.isBlank()) continue
@@ -78,8 +82,15 @@ object M3uParser {
                     }
                     if (key != null) entryHeaders = mergedHeaders(entryHeaders, mapOf(key to option.substringAfter('=', "")))
                 }
-                line.startsWith("#KODIPROP:", true) && line.substringBefore('=').endsWith("stream_headers", true) ->
-                    entryHeaders = mergedHeaders(entryHeaders, queryHeaders(line.substringAfter('=')))
+                line.startsWith("#KODIPROP:", true) -> {
+                    val property = line.substringAfter(':')
+                    val key = property.substringBefore('=').trim()
+                    val value = property.substringAfter('=', "")
+                    if (key.equals("inputstream.adaptive.stream_headers", true)) {
+                        entryHeaders = mergedHeaders(entryHeaders, queryHeaders(value))
+                    }
+                    kodi.property(key, value)
+                }
                 line.startsWith("#EXTHTTP:", true) -> {
                     try {
                         val data = json.parseToJsonElement(line.substringAfter(':')) as? JsonObject
@@ -101,18 +112,23 @@ object M3uParser {
                     val entryGroup = attrs["group-title"].orEmpty().ifBlank { group }
                     if (entryGroup.isNotBlank()) group = entryGroup
                     val days = sequenceOf("catchup-days", "timeshift", "tvg-rec")
-                        .mapNotNull { allAttrs[it]?.toDoubleOrNull() }.firstOrNull()?.coerceAtLeast(0.0) ?: 0.0
+                        .mapNotNull { allAttrs[it]?.toDoubleOrNull() }.firstOrNull()?.coerceAtLeast(0.0)
+                        ?: if (listOf("catchup-days", "timeshift", "tvg-rec").any(allAttrs::containsKey)) 0.0
+                        else config.catchupDaysFallback.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
                     val catchupMode = allAttrs["catchup"] ?: allAttrs["catchup-type"].orEmpty()
                     val catchupSource = allAttrs["catchup-source"].orEmpty()
                     val catchup = if (catchupMode.equals("none", true)) null else if (days > 0 || catchupSource.isNotEmpty() || catchupMode.isNotEmpty())
                         Catchup(catchupMode.ifBlank { "default" }, catchupSource, days) else null
                     val headers = mergedHeaders(config.headers, entryHeaders, if ('|' in line) queryHeaders(line.substringAfter('|')) else emptyMap())
                     val id = stableId(config.id, attrs["tvg-id"].orEmpty().ifBlank { url }, title)
+                    val drm = kodi.result()
+                    drm.unsupportedReason?.let(notes::add)
                     entries.putIfAbsent(id, MediaEntry(
                         id, config.id, title, url,
                         kind = if ((hasMetadata && duration > 0) || attrs["type"].equals("movie", true)) MediaKind.MOVIE else MediaKind.LIVE,
                         group = entryGroup, logo = resolveHttp(baseUrl, attrs["tvg-logo"].orEmpty()),
                         epgId = attrs["tvg-id"].orEmpty(), headers = headers, catchup = catchup,
+                        drm = drm.drm, mimeType = drm.mimeType, playbackUnsupportedReason = drm.unsupportedReason,
                     ))
                     if (entries.size > 100_000) throw ProviderException("Playlist contains more than 100,000 entries")
                     reset()
@@ -120,7 +136,7 @@ object M3uParser {
             }
         }
         if (entries.isEmpty()) throw ProviderException("Playlist contains no playable HTTP or HTTPS entries")
-        return Catalog(entries.values.toList(), epgUrls.toList(), notes)
+        return Catalog(entries.values.toList(), epgUrls.toList(), notes.toList())
     }
 
     private fun attributes(text: String): Map<String, String> = attribute.findAll(text).associate {
