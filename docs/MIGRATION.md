@@ -2,6 +2,8 @@
 
 The native app is installed separately as `play.ott.foss.nativeapp`. The older Full and Play apps use different IDs, so Android does not automatically transfer their sandbox, cookies, settings, or passwords. Keep the old installation until you have checked the sources you need.
 
+APK/AAB building and publication were removed from the `ottplay-foss` main branch in [PR #452](https://github.com/open-ott-play/ottplay-foss/pull/452), commit `8fd0762fc587154705293ac034b8fae312014569`. Android builds now live in this repository. The old Android bridges remain there only as compatibility-test fixtures; iOS, web, desktop, and server builds continue in `ottplay-foss`.
+
 ## Transferring sources directly
 
 - For M3U, open the option to add a source by URL and copy your playlist URL, XMLTV URL, and HTTP headers as needed. Select local files again through Android's file picker. Absolute HTTP(S) stream URLs inside the selected file are supported; relative links require an accessible HTTP(S) base playlist URL.

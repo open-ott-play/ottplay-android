@@ -92,6 +92,12 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - name: Reserve disk space for the ephemeral emulator
+        run: |
+          # This Kotlin-only project does not use the runner's preinstalled NDK/CMake.
+          # Keep SDK platforms and build tools; TV images and userdata need the space.
+          sudo rm -rf -- "${ANDROID_HOME:?}/ndk" "${ANDROID_HOME:?}/cmake"
+          df -h "$ANDROID_HOME"
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
       - name: Install compile SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
@@ -108,6 +114,7 @@ jobs:
           arch: ${{ matrix.arch }}
           profile: ${{ matrix.profile }}
           avd-name: ottplay-${{ matrix.device }}
+          disk-size: 2048M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
           script: ./gradlew --no-daemon --stacktrace :app:connectedDebugAndroidTest
