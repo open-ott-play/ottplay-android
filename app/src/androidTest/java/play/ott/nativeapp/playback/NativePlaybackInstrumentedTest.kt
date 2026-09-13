@@ -29,6 +29,7 @@ class NativePlaybackInstrumentedTest {
     private val context = instrumentation.targetContext
 
     @Test fun decoderContinuesAfterControllerReleaseAndReconnectsUntilExplicitStop() {
+        PlaybackTestLifecycle.finishPreviousPlayback()
         val launch = requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         var activity = instrumentation.startActivitySync(launch)
@@ -56,7 +57,7 @@ class NativePlaybackInstrumentedTest {
             onMain { original.clearVideoSurface(); original.release() }
             first = null
             onMain { activity.finish() }
-            instrumentation.waitForIdleSync()
+            PlaybackTestLifecycle.awaitDestroyed(activity)
 
             // A fresh controller attaches to the existing decoder/session, without setMediaItem.
             second = connect()
@@ -86,6 +87,7 @@ class NativePlaybackInstrumentedTest {
                 second?.run { stop(); release() }
                 activity.finish()
             }
+            PlaybackTestLifecycle.finishPreviousPlayback()
         }
     }
 
@@ -117,15 +119,23 @@ class NativePlaybackInstrumentedTest {
 
     private fun awaitPlayer(message: String, player: MediaController, condition: (MediaController) -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(12)
+        var lastState = "not observed"
         while (System.nanoTime() < deadline) {
             var satisfied = false
             var failureCode: Int? = null
-            onMain { satisfied = condition(player); failureCode = player.playerError?.errorCode }
-            assertTrue("$message; player error code $failureCode", failureCode == null)
+            onMain {
+                satisfied = condition(player)
+                failureCode = player.playerError?.errorCode
+                lastState = "connected=${player.isConnected}, state=${player.playbackState}, " +
+                    "playWhenReady=${player.playWhenReady}, items=${player.mediaItemCount}, " +
+                    "mediaId=${player.currentMediaItem?.mediaId}, position=${player.currentPosition}, " +
+                    "repeat=${player.repeatMode}, error=$failureCode"
+            }
+            assertTrue("$message; $lastState", failureCode == null)
             if (satisfied) return
             Thread.sleep(50)
         }
-        throw AssertionError(message)
+        throw AssertionError("$message; $lastState")
     }
 
     private fun onMain(block: () -> Unit) = instrumentation.runOnMainSync(block)

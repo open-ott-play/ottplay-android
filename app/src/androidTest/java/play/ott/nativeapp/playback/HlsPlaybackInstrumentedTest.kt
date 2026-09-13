@@ -75,6 +75,7 @@ class HlsPlaybackInstrumentedTest {
                 assertTrue("Unexpected unauthenticated or invalid HLS requests: ${server.rejections}", server.rejections.isEmpty())
             } finally {
                 onMain { controller?.run { stop(); release() }; activity.finish() }
+                PlaybackTestLifecycle.finishPreviousPlayback()
             }
         }
     }
