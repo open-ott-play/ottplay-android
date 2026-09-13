@@ -75,3 +75,7 @@ The [Android workflow](.github/workflows/android.yml) runs core and Android unit
 For manual workflow runs, `run_device_tests` enables two equally required jobs: phone API 35 (`google_apis`, `x86_64`, `pixel_7` profile) and Android TV API 36 (`android-tv`, `x86_64`, `tv_1080p` profile). The TV job uses a separate TV OS image; both jobs run the complete instrumentation suite and retain separate reports. Package `system-images;android-36;android-tv;x86_64`, revision 4, was verified in the stable `sdkmanager --list --channel=0` catalog. Emulator jobs are disabled by default. The workflow defines the validation procedure; each run's reports establish its results. Host tests, emulator tests, and physical-device experience are different levels of evidence.
 
 Migration from the older app is described in [docs/MIGRATION.md](docs/MIGRATION.md). Completed checks, results, and screenshots of the actual Android interface are collected in [docs/VALIDATION-0.2.md](docs/VALIDATION-0.2.md).
+
+## Authoring language
+
+Write code comments, documentation, commit messages, and pull-request text in English. Preserve UI translations, language choices, and external or provider data in their original languages.
