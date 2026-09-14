@@ -1,7 +1,7 @@
 import java.io.File
 import java.util.Properties
 
-plugins { id("com.android.application"); kotlin("android"); kotlin("plugin.compose"); kotlin("plugin.serialization") }
+plugins { id("com.android.application"); kotlin("plugin.compose"); kotlin("plugin.serialization") }
 
 val appVersion = Properties().apply {
     rootProject.file("version.properties").inputStream().use(::load)

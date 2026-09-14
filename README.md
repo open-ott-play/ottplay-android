@@ -37,7 +37,7 @@ The offline privacy policy is available before setup and in settings. The [publi
 
 Install JDK 17 and the Android SDK with platform 36, build-tools 36.0.0, and platform-tools. The Gradle Wrapper is included. Set the SDK location with `ANDROID_HOME` or a local `local.properties` file; do not commit personal paths or signing keys.
 
-The project pins Kotlin **2.3.0**, Android Gradle Plugin **8.13.2**, and Gradle **8.14.3**. AGP 8.13.2 includes R8 8.13.19 with Kotlin 2.3 support: [official release notes](https://developer.android.com/build/releases/agp-8-13-0-release-notes). The Wrapper sets `distributionSha256Sum` from the [official Gradle 8.14.3 all checksum](https://services.gradle.org/distributions/gradle-8.14.3-all.zip.sha256) to verify the downloaded distribution.
+The project pins Kotlin **2.3.0**, Android Gradle Plugin **9.4.0**, and Gradle **9.7.1**. The Android module uses AGP's built-in Kotlin support; the Kotlin/JVM, Compose compiler and serialization plugins remain explicitly configured. The Wrapper sets `distributionSha256Sum` from the [official Gradle 9.7.1 all checksum](https://services.gradle.org/distributions/gradle-9.7.1-all.zip.sha256) to verify the downloaded distribution.
 
 ```bash
 ./gradlew :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug

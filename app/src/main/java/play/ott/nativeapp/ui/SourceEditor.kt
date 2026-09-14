@@ -88,10 +88,10 @@ internal fun SourceEditor(
                 }
                 if (kind == SourceKind.STALKER) {
                     OutlinedTextField(
-                        value = mac, onValueChange = { mac = it }, label = { Text("MAC-адрес устройства") },
+                        value = mac, onValueChange = { mac = it }, label = { Text("Идентификатор портала (MAC)") },
                         placeholder = { Text("00:1A:79:00:00:00") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     )
-                    Text("Укажите MAC-адрес, зарегистрированный у провайдера.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Введите MAC-идентификатор, зарегистрированный у провайдера. Приложение не считывает аппаратный MAC-адрес устройства.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 OutlinedTextField(
                     value = epgUrl, onValueChange = { epgUrl = it }, label = { Text("Адрес телепрограммы XMLTV (необязательно)") },

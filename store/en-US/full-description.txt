@@ -1,6 +1,6 @@
 Play your own IPTV playlists, movies and series with a native Android player built for phones and Android TV remotes.
 
-Add an HTTPS M3U playlist, choose a local playlist file, or connect your existing Xtream or Stalker account. Browse groups, search your library, save favorites and load XMLTV programme guides. Catch-up is available when supported by your source.
+Add an HTTPS M3U playlist, choose a local playlist file, or connect your existing account on a compatible HTTPS Xtream or Stalker server. Browse groups, search your library, save favorites and load XMLTV programme guides. Catch-up is available when supported by your source.
 
 Playback uses Android Media3. Select available audio tracks and subtitles, adjust playback speed and scaling, and resume movies from a saved position. Phone devices can use picture-in-picture and optional background audio. On Android TV, video pauses when you leave the app.
 
