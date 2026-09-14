@@ -140,7 +140,13 @@ internal fun NativePlayerPane(
                         isFocusable = true
                         isFocusableInTouchMode = true
                         contentDescription = "Видеоплеер. ОК — управление, меню — дорожки и параметры."
-                        setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { controlsVisible = it == View.VISIBLE })
+                        setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
+                            controlsVisible = visibility == View.VISIBLE
+                            retainPlaybackFocusAfterControlsHide(
+                                visibility,
+                                allowFocusRetention = isTv && !optionsOpen && trackType == null && !inPictureInPicture,
+                            )
+                        })
                         if (isTv) post { focusPlaybackControl() }
                     }
                 },
@@ -173,6 +179,27 @@ internal fun NativePlayerPane(
 private class RemotePlayerView(context: Context) : PlayerView(context) {
     var openOptions: () -> Unit = {}
     private var playbackFocusPending = false
+    private var controllerHidWithFocus = false
+
+    override fun clearChildFocus(child: View) {
+        // GONE clears child focus before Media3 reports the controller's visibility.
+        // Capture ownership now; the framework may assign another focus meanwhile.
+        controllerHidWithFocus = child.id == androidx.media3.ui.R.id.exo_controller &&
+            child.visibility == View.GONE && focusedChild === child && hasWindowFocus() &&
+            resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+        super.clearChildFocus(child)
+    }
+
+    fun retainPlaybackFocusAfterControlsHide(visibility: Int, allowFocusRetention: Boolean) {
+        val restoreFocus = controllerHidWithFocus
+        controllerHidWithFocus = false
+        if (visibility == View.GONE && restoreFocus && allowFocusRetention &&
+            isAttachedToWindow && isShown && hasWindowFocus() && useController && player != null) {
+            // This runs after setVisibility(GONE) finishes clearing focus. Keep the
+            // video ready for remote input without reopening controls or dialogs.
+            requestFocus()
+        }
+    }
 
     fun focusPlaybackControl() {
         playbackFocusPending = true

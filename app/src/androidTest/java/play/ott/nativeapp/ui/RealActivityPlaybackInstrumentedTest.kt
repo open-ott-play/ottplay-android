@@ -87,13 +87,45 @@ class RealActivityPlaybackInstrumentedTest {
         val playerView = launchAndPlayDemo()
         val actualPlayer = requireNotNull(playerView.player)
         if (isTv) {
+            // Reveal controls through the remote if startup already outlasted
+            // their timer; keep them visible until the explicit auto-hide phase.
+            var revealControls = false
+            onMain {
+                playerView.controllerShowTimeoutMs = 0
+                revealControls = !playerView.isControllerFullyVisible
+            }
+            if (revealControls) key(KeyEvent.KEYCODE_DPAD_CENTER)
             awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
             key(KeyEvent.KEYCODE_DPAD_CENTER)
         } else onMain { playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause).performClick() }
         awaitPlayback("Native pause must preserve the selected item") { !it.playWhenReady && it.currentMediaItem?.mediaId == entryId }
-        if (isTv) key(KeyEvent.KEYCODE_DPAD_CENTER)
-        else onMain { playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause).performClick() }
+        if (isTv) {
+            // Keep the current remote focus while the resume action settles. The
+            // automatic-hide behavior is exercised explicitly in the next phase.
+            onMain { playerView.controllerShowTimeoutMs = 0 }
+            key(KeyEvent.KEYCODE_DPAD_CENTER)
+        } else onMain { playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause).performClick() }
         awaitPlayback("Native play must resume") { it.isPlaying }
+
+        if (isTv) {
+            awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
+            onMain {
+                playerView.controllerShowTimeoutMs = 500
+                playerView.showController()
+            }
+            awaitState("Native controls must automatically hide during playback") {
+                var hidden = false
+                onMain { hidden = !playerView.isControllerFullyVisible }
+                hidden
+            }
+            var retainsRemoteFocus = false
+            onMain { retainsRemoteFocus = playerView.hasFocus() }
+            if (!retainsRemoteFocus) {
+                capturePlaybackDiagnostics("Automatic controller hide lost native remote focus", includeSemantics = true)
+            }
+            assertTrue("Automatic controller hide must retain remote focus within the native player", retainsRemoteFocus)
+            onMain { playerView.controllerShowTimeoutMs = 4000 }
+        }
 
         openOptions()
         compose.onNodeWithTag("player-subtitle-options").assertIsNotEnabled() // Fixture has no subtitle stream.
@@ -106,6 +138,18 @@ class RealActivityPlaybackInstrumentedTest {
         onMain { assertEquals(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, playerView.resizeMode) }
 
         if (isTv) {
+            // Isolate explicit Back behavior from the separately tested auto-hide
+            // timer, then let its visibility callback update Compose's BackHandler.
+            onMain {
+                playerView.controllerShowTimeoutMs = 0
+                if (!playerView.isControllerFullyVisible) playerView.showController()
+            }
+            awaitState("Native controls must be visible before testing explicit Back") {
+                var visible = false
+                onMain { visible = playerView.isControllerFullyVisible }
+                visible
+            }
+            compose.waitForIdle()
             // The first Back dismisses controls; the second returns to the catalogue and restores focus.
             key(KeyEvent.KEYCODE_BACK)
             onMain { assertTrue("Back must hide native controls", !playerView.isControllerFullyVisible) }
@@ -328,9 +372,14 @@ class RealActivityPlaybackInstrumentedTest {
                 fun describe(view: View?): String {
                     if (view == null) return "null"
                     val id = runCatching { view.resources.getResourceName(view.id) }.getOrDefault(view.id.toString())
+                    val playback = if (view is PlayerView) {
+                        val button = view.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause)
+                        ", controllerVisible=${view.isControllerFullyVisible}, controllerTimeoutMs=${view.controllerShowTimeoutMs}, " +
+                            "playPauseShown=${button?.isShown}, playPauseFocused=${button?.hasFocus()}"
+                    } else ""
                     return "${view.javaClass.name}@${System.identityHashCode(view)}(id=$id, tag=${view.tag}, " +
                         "attached=${view.isAttachedToWindow}, windowFocus=${view.hasWindowFocus()}, " +
-                        "hasFocus=${view.hasFocus()}, visibility=${view.visibility})"
+                        "hasFocus=${view.hasFocus()}, visibility=${view.visibility}$playback)"
                 }
                 val roots = if (Build.VERSION.SDK_INT >= 29) WindowInspector.getGlobalWindowViews()
                     else listOfNotNull(activity?.window?.decorView)
@@ -403,7 +452,13 @@ class RealActivityPlaybackInstrumentedTest {
             if (condition()) return
             Thread.sleep(50)
         }
-        throw AssertionError(message)
+        val failure = AssertionError(message)
+        try {
+            capturePlaybackDiagnostics("awaitState($message) failed; menuAttempt=$menuOpenAttempt", includeSemantics = true)
+        } catch (diagnosticFailure: Throwable) {
+            failure.addSuppressed(diagnosticFailure)
+        }
+        throw failure
     }
 
     private fun key(code: Int) { instrumentation.sendKeyDownUpSync(code); compose.waitForIdle() }
