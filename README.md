@@ -37,6 +37,8 @@ The offline privacy policy is available before setup and in settings. The [publi
 
 Install JDK 17 and the Android SDK with platform 36, build-tools 36.0.0, and platform-tools. The Gradle Wrapper is included. Set the SDK location with `ANDROID_HOME` or a local `local.properties` file; do not commit personal paths or signing keys.
 
+OkHttp is pinned to **5.4.0**, the latest release compatible with compile SDK 36. Version 5.5.0 requires API 37 and is excluded from Dependabot updates until that SDK is available and validated.
+
 The project pins Kotlin **2.3.0**, Android Gradle Plugin **9.4.0**, and Gradle **9.7.1**. The Android module uses AGP's built-in Kotlin support; the Kotlin/JVM, Compose compiler and serialization plugins remain explicitly configured. The Wrapper sets `distributionSha256Sum` from the [official Gradle 9.7.1 all checksum](https://services.gradle.org/distributions/gradle-9.7.1-all.zip.sha256) to verify the downloaded distribution.
 
 ```bash
