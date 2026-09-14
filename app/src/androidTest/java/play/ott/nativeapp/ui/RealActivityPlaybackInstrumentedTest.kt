@@ -5,19 +5,26 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityWindowInfo
+import android.view.inspector.WindowInspector
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.printToString
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -59,6 +66,7 @@ class RealActivityPlaybackInstrumentedTest {
     private val isTv get() = context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     private var activity: MainActivity? = null
     private var savedPreferences: UserPreferences? = null
+    private var menuOpenAttempt = 0
 
     @Before fun seedOnlyOurSyntheticSource(): Unit = runBlocking {
         PlaybackTestLifecycle.finishPreviousPlayback()
@@ -256,7 +264,11 @@ class RealActivityPlaybackInstrumentedTest {
             onMain { focused = activity?.window?.decorView?.findViewWithTag<View>("ott-native-video")?.hasFocus() == true }
             focused
         }
+        menuOpenAttempt++
+        // A semantics query synchronizes Compose and could hide the focus-handoff race.
+        capturePlaybackDiagnostics("openOptions#$menuOpenAttempt before input", includeCompose = false)
         if (isTv) key(KeyEvent.KEYCODE_MENU) else compose.onNodeWithTag("player-options").performClick()
+        capturePlaybackDiagnostics("openOptions#$menuOpenAttempt after input")
         awaitNode("player-speed-options")
     }
 
@@ -284,8 +296,73 @@ class RealActivityPlaybackInstrumentedTest {
     }
 
     private fun awaitNode(tag: String) {
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag(tag).assertIsDisplayed()
+        try {
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag(tag).assertIsDisplayed()
+        } catch (failure: Throwable) {
+            // Capture the failed UI before @After removes its Activity and Dialogs.
+            // Diagnostics must never replace the original assertion/timeout.
+            try {
+                capturePlaybackDiagnostics("awaitNode($tag) failed; menuAttempt=$menuOpenAttempt", includeSemantics = true)
+            } catch (diagnosticFailure: Throwable) {
+                failure.addSuppressed(diagnosticFailure)
+            }
+            throw failure
+        }
+    }
+
+    private fun capturePlaybackDiagnostics(stage: String, includeCompose: Boolean = true, includeSemantics: Boolean = false) {
+        fun record(label: String, read: () -> String) {
+            try {
+                read().chunked(3_000).forEachIndexed { index, text ->
+                    Log.i("OttPlaybackUiTest", "$stage; $label[$index]: $text")
+                }
+            } catch (failure: Throwable) {
+                Log.w("OttPlaybackUiTest", "$stage; $label unavailable", failure)
+            }
+        }
+
+        record("windows") {
+            var description = ""
+            onMain {
+                fun describe(view: View?): String {
+                    if (view == null) return "null"
+                    val id = runCatching { view.resources.getResourceName(view.id) }.getOrDefault(view.id.toString())
+                    return "${view.javaClass.name}@${System.identityHashCode(view)}(id=$id, tag=${view.tag}, " +
+                        "attached=${view.isAttachedToWindow}, windowFocus=${view.hasWindowFocus()}, " +
+                        "hasFocus=${view.hasFocus()}, visibility=${view.visibility})"
+                }
+                val roots = if (Build.VERSION.SDK_INT >= 29) WindowInspector.getGlobalWindowViews()
+                    else listOfNotNull(activity?.window?.decorView)
+                description = "activityFocus=${describe(activity?.currentFocus)}; " + roots.joinToString("\n") { root ->
+                    val params = root.layoutParams as? WindowManager.LayoutParams
+                    "title=${params?.title}, type=${params?.type}, token=${root.windowToken}, root=${describe(root)}, " +
+                        "focusedChild=${describe(root.findFocus())}, nativePlayer=${describe(root.findViewWithTag<View>("ott-native-video"))}"
+                }
+            }
+            description
+        }
+
+        if (!includeCompose) return
+        record("menu tags") {
+            val tags = listOf("player-options", "player-speed-options", "player-speed-0.5", "player-speed-0.75",
+                "player-speed-1.0", "player-speed-1.25", "player-speed-1.5", "player-speed-2.0")
+            val nodes = compose.onAllNodes(SemanticsMatcher("Playback menu diagnostic tags") {
+                it.config.getOrElse(SemanticsProperties.TestTag) { "" } in tags
+            }, useUnmergedTree = true).fetchSemanticsNodes(atLeastOneRootRequired = false)
+            tags.joinToString { tag ->
+                val matches = nodes.filter { it.config.getOrElse(SemanticsProperties.TestTag) { "" } == tag }
+                "$tag=${matches.size}(focused=${matches.count { it.config.getOrElse(SemanticsProperties.Focused) { false } }})"
+            }
+        }
+
+        if (includeSemantics) record("all Compose roots, unmerged") {
+            val roots = compose.onAllNodes(isRoot(), useUnmergedTree = true)
+            val count = roots.fetchSemanticsNodes(atLeastOneRootRequired = false).size
+            "rootCount=$count\n" + (0 until count).joinToString("\n") { index ->
+                "root[$index]:\n${roots[index].printToString()}"
+            }
+        }
     }
 
     private fun awaitPlayerView(): PlayerView {
