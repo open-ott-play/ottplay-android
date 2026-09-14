@@ -87,6 +87,8 @@ jobs:
             profile: pixel_7
             ram_mb: 3072
             stabilize_guest: 'true'
+            # Preserve Pixel 7's dp viewport while reducing software rendering load.
+            display: 720x1600@280
           # SDK stable catalogue: system-images;android-36;android-tv;x86_64, revision 4.
           # This is an Android TV OS image, not a phone with overridden uiMode.
           - device: androidtv-api36
@@ -96,10 +98,12 @@ jobs:
             profile: tv_1080p
             ram_mb: 2048
             stabilize_guest: 'false'
+            display: ''
     env:
       CI_AVD_NAME: ottplay-${{ matrix.device }}
       CI_AVD_PROFILE: ${{ matrix.profile }}
       CI_AVD_RAM_MB: ${{ matrix.ram_mb }}
+      CI_AVD_DISPLAY: ${{ matrix.display }}
       CI_STABILIZE_GUEST: ${{ matrix.stabilize_guest }}
       CI_SYSTEM_IMAGE: system-images;android-${{ matrix.api }};${{ matrix.target }};${{ matrix.arch }}
       CI_EMULATOR_DIAGNOSTICS: app/build/reports/emulator
