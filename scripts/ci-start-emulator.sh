@@ -23,6 +23,13 @@ vm.heapSize=512
 disk.dataPartition.size=2048M
 CONFIG
 
+if [[ -n "${CI_AVD_DISPLAY:-}" ]]; then
+  python3 scripts/ci-emulator-display.py configure \
+    --avd-config "$ANDROID_AVD_HOME/$CI_AVD_NAME.avd/config.ini" \
+    --display "$CI_AVD_DISPLAY"
+fi
+cp "$ANDROID_AVD_HOME/$CI_AVD_NAME.avd/config.ini" "$CI_EMULATOR_DIAGNOSTICS/avd-config.ini"
+
 timeout 15s adb start-server
 nohup "$ANDROID_HOME/emulator/emulator" -avd "$CI_AVD_NAME" -port 5554 \
   -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot \
@@ -50,6 +57,11 @@ while (( SECONDS < boot_deadline )); do
      timeout 10s adb -s emulator-5554 shell settings put global animator_duration_scale 0.0; then
     echo 'Android boot, package manager, input service and animation settings are ready.'
     timeout 10s adb -s emulator-5554 shell getprop > "$CI_EMULATOR_DIAGNOSTICS/device-properties.txt"
+    if [[ -n "${CI_AVD_DISPLAY:-}" ]]; then
+      python3 scripts/ci-emulator-display.py verify \
+        --display "$CI_AVD_DISPLAY" --serial emulator-5554 \
+        --diagnostics-dir "$CI_EMULATOR_DIAGNOSTICS"
+    fi
     if [[ "${CI_STABILIZE_GUEST:-false}" == 'true' ]]; then
       python3 scripts/ci-wait-for-guest-idle.py
     fi
