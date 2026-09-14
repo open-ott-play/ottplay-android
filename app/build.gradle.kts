@@ -26,6 +26,8 @@ android {
         versionCode = appVersion.getProperty("versionCode").toInt().also { require(it in 1..2100000000) }
         versionName = appVersion.getProperty("versionName").also { require(it.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("boolean", "ALLOW_INSECURE_HTTP", "false")
+        manifestPlaceholders["allowCleartextTraffic"] = "false"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -38,6 +40,11 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Local HTTP fixtures are confined to a debuggable, non-publishable test variant.
+            buildConfigField("boolean", "ALLOW_INSECURE_HTTP", "true")
+            manifestPlaceholders["allowCleartextTraffic"] = "true"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -50,6 +57,14 @@ android {
             versionNameSuffix = "-preview"
             matchingFallbacks += "release"
             signingConfig = if (signingVariant == "preview") signingConfigs.getByName("configured") else null
+        }
+        create("full") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".full"
+            versionNameSuffix = "-full"
+            matchingFallbacks += "release"
+            buildConfigField("boolean", "ALLOW_INSECURE_HTTP", "true")
+            manifestPlaceholders["allowCleartextTraffic"] = "true"
         }
     }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
@@ -83,6 +98,7 @@ dependencies {
         implementation("androidx.media3:media3-$it:1.11.1")
     }
     testImplementation(kotlin("test"))
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("androidx.test:core:1.7.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

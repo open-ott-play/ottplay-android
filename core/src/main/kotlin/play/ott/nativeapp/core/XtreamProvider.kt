@@ -53,7 +53,8 @@ internal class XtreamProvider(private val http: ProviderHttp) {
                 entries += MediaEntry(stableId(config.id, type, id), config.id, name, url, kind,
                     group = categories[item.string("category_id")].orEmpty().ifBlank { "Other" },
                     logo = resolveHttp(config.url, item.string("stream_icon").ifBlank { item.string("cover") }), epgId = epgId,
-                    headers = config.headers, catchup = catchup, description = item.string("plot"), providerId = id)
+                    headers = config.headers, catchup = catchup, description = item.string("plot"), providerId = id,
+                    headerOrigins = headerOrigins(config.headers, config.url))
                 if (entries.size > 100_000) throw ProviderException("Xtream catalogue contains more than 100,000 entries")
             }
         }
@@ -85,6 +86,7 @@ internal class XtreamProvider(private val http: ProviderHttp) {
                 url = url, kind = MediaKind.EPISODE, group = series.name,
                 logo = resolveHttp(config.url, info?.string("movie_image").orEmpty()).ifBlank { series.logo },
                 headers = config.headers, description = info?.string("plot").orEmpty(),
+                headerOrigins = headerOrigins(config.headers, config.url),
                 season = item.int("season") ?: season.toIntOrNull(), episode = item.int("episode_num"), providerId = id,
             )
             if (result.size > 100_000) throw ProviderException("Series contains too many episodes")

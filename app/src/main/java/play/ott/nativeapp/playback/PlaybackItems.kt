@@ -1,6 +1,7 @@
 package play.ott.nativeapp.playback
 
 import android.net.Uri
+import androidx.core.net.toUri
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -50,7 +51,7 @@ object PlaybackItems {
     ): MediaItem {
         require(unsupportedReason == null) { "Настройка DRM или формата этой записи не поддерживается" }
         require(id.isNotBlank()) { "A catalogue item id is required" }
-        val uri = Uri.parse(RequestPolicy.requireStreamUrl(url))
+        val uri = RequestPolicy.requireStreamUrl(url).toUri()
         val validatedDrm = drm?.let(DrmPolicy::validated)
         val contentMimeType = validatedMimeType(mimeType) ?: mimeType(uri)
         val extras = Bundle().apply {

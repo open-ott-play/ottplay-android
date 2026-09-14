@@ -1,6 +1,7 @@
 package play.ott.nativeapp.playback
 
 import android.app.PendingIntent
+import android.content.res.Configuration
 import android.os.Process
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -26,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import play.ott.nativeapp.OttplayApplication
 import play.ott.nativeapp.core.MediaKind
 import play.ott.nativeapp.core.SourceConfig
@@ -73,11 +75,14 @@ class PlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         player = exoPlayer
-        val repository = (application as OttplayApplication).repository
+        val app = application as OttplayApplication
+        val repository = app.repository
+        val isTelevision = resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+        val foregroundPlayer = if (isTelevision) ForegroundVideoPlayer(exoPlayer) { app.playbackActivityVisible.value } else exoPlayer
         progress = PlaybackProgressRecorder(exoPlayer, serviceScope, repository.preferences.resumeWriter)
         var queueSource: SourceConfig? = null
         val navigationPlayer = ChannelNavigationPlayer(
-            delegate = StopClearsPlaylistPlayer(exoPlayer),
+            delegate = StopClearsPlaylistPlayer(foregroundPlayer),
             scope = serviceScope,
             loadChannels = { mediaId ->
                 queueSource = null
@@ -109,10 +114,18 @@ class PlaybackService : MediaSessionService() {
             validate = { PlaybackItems.requireSupported(this, it) },
         )
         sessionPlayer = navigationPlayer
+        if (isTelevision) serviceScope.launch {
+            app.playbackActivityVisible.collect { visible ->
+                // Use the navigation player so leaving the app also cancels an unresolved channel switch.
+                if (!visible) navigationPlayer.pause()
+            }
+        }
         val builder = MediaSession.Builder(this, navigationPlayer).setCallback(SessionCallback())
-        packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
+        val launch = if (isTelevision) packageManager.getLeanbackLaunchIntentForPackage(packageName)
+            else packageManager.getLaunchIntentForPackage(packageName)
+        launch?.let { intent ->
             builder.setSessionActivity(PendingIntent.getActivity(
-                this, 0, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             ))
         }
         mediaSession = builder.build()
@@ -193,6 +206,13 @@ class PlaybackService : MediaSessionService() {
         // Never reuse an ID in this process; randomize the starting point across process restarts.
         val notificationIds = AtomicInteger(Random.nextInt(100_000, Int.MAX_VALUE))
     }
+}
+
+/** Gate commands before they reach ExoPlayer, even when no Activity/controller listener survives. */
+@UnstableApi
+private class ForegroundVideoPlayer(player: Player, private val visible: () -> Boolean) : ForwardingPlayer(player) {
+    override fun play() { if (visible()) super.play() }
+    override fun setPlayWhenReady(playWhenReady: Boolean) { super.setPlayWhenReady(playWhenReady && visible()) }
 }
 
 /** Explicit Stop retires the item and notification; Pause deliberately retains both. */

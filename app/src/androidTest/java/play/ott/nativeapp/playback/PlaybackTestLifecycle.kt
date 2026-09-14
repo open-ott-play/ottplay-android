@@ -6,6 +6,7 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Intent
+import android.content.res.Configuration
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -25,6 +26,14 @@ import play.ott.nativeapp.OttplayApplication
 internal object PlaybackTestLifecycle {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
+
+    fun launchIntent(): Intent {
+        val television = context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+        val intent = if (television) context.packageManager.getLeanbackLaunchIntentForPackage(context.packageName)
+            else context.packageManager.getLaunchIntentForPackage(context.packageName)
+        return requireNotNull(intent) { "The app must expose the launcher for the device form factor" }
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
 
     fun awaitDestroyed(activity: Activity) {
         awaitState("Playback Activity was not destroyed") {

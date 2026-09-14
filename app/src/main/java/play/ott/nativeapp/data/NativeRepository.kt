@@ -1,7 +1,7 @@
 package play.ott.nativeapp.data
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -10,19 +10,23 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import play.ott.nativeapp.R
+import play.ott.nativeapp.AppTransportPolicy
 import play.ott.nativeapp.core.*
 import java.util.UUID
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 data class ImportResult(val count: Int, val notes: List<String> = emptyList())
 
-class NativeRepository(private val context: Context) {
+class NativeRepository(
+    private val context: Context,
+    private val transportPolicy: RemoteTransportPolicy = AppTransportPolicy.current,
+) {
     private val vault = SourceVault(context)
     private val db = CatalogDatabase(context, vault)
     private val sourceMutex = Mutex()
     private val refreshMutex = Mutex()
     val preferences = PreferencesStore(context)
-    val providers = ProviderRepository()
+    val providers = ProviderRepository(transportPolicy = transportPolicy)
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     suspend fun sources(): List<SourceConfig> = withContext(Dispatchers.IO) { sourceMutex.withLock { vault.read() } }
@@ -41,13 +45,13 @@ class NativeRepository(private val context: Context) {
         require(source.id.isNotBlank() && source.name.isNotBlank()) { "Укажите название источника" }
         require(source.id.length <= 160 && source.name.length <= 200) { "Слишком длинное название" }
         require(source.catchupDaysFallback.isFinite() && source.catchupDaysFallback in 0.0..3650.0) { "Invalid archive duration" }
-        val scheme = Uri.parse(source.url).scheme
+        val scheme = source.url.toUri().scheme
         require(scheme in setOf("http", "https", "content") || source.url == DEMO_URL) { "Unsupported source address" }
-        if (scheme == "http" || scheme == "https") require(!Uri.parse(source.url).host.isNullOrBlank()) { "Missing source host" }
+        if (scheme == "http" || scheme == "https") transportPolicy.requireHttpUrl(source.url)
         if (scheme == "content" || source.url == DEMO_URL) require(source.kind == SourceKind.M3U) { "Invalid source type" }
         if (source.kind == SourceKind.XTREAM) require(source.username.isNotBlank() && source.password.isNotBlank()) { "Missing credentials" }
         if (source.kind == SourceKind.STALKER) require(Regex("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}").matches(source.mac)) { "Invalid MAC address" }
-        if (source.epgUrl.isNotBlank()) require(Uri.parse(source.epgUrl).scheme in setOf("http", "https") && !Uri.parse(source.epgUrl).host.isNullOrBlank()) { "Invalid EPG address" }
+        if (source.epgUrl.isNotBlank()) transportPolicy.requireHttpUrl(source.epgUrl)
         require(source.headers.size <= 64) { "Too many headers" }
         source.headers.forEach { (name, value) ->
             require(name.lowercase() !in setOf("host", "content-length", "connection", "transfer-encoding")) { "Unsupported header" }
@@ -74,7 +78,7 @@ class NativeRepository(private val context: Context) {
                     description = "Синтетический тестовый ролик. Работает без сети; звук — тишина."
                 )))
                 source.url.startsWith("content://") -> {
-                    val text = context.contentResolver.openInputStream(Uri.parse(source.url))?.use {
+                    val text = context.contentResolver.openInputStream(source.url.toUri())?.use {
                         val bytes = readBounded(it, 32 * 1024 * 1024)
                         require(bytes.size <= 32 * 1024 * 1024) { "Плейлист слишком большой" }
                         bytes.toString(Charsets.UTF_8)
@@ -121,7 +125,7 @@ class NativeRepository(private val context: Context) {
         if (legacy == null) validateBackupPreferences(backup.preferences)
         // A persisted SAF permission belongs to one installation. Skip only these valid sources;
         // a mixed backup must still restore its network accounts and playback positions.
-        val fileSources = backup.sources.filter { Uri.parse(it.url).scheme == "content" }
+        val fileSources = backup.sources.filter { it.url.toUri().scheme == "content" }
         val importedSources = backup.sources - fileSources.toSet()
         val notes = legacy?.notes.orEmpty() + fileSources.map {
             "Локальный плейлист «${it.name}» нужно выбрать заново через системный диалог."

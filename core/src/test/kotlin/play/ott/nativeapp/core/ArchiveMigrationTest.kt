@@ -31,4 +31,19 @@ class ArchiveMigrationTest {
         assertNotNull(CatchupResolver.resolve(entry, programme.copy(channelId = "display name"), now))
         assertNull(CatchupResolver.resolve(entry, programme.copy(channelId = "unrelated"), now))
     }
+
+    @Test fun `archive retains source credentials only on their original authority`() {
+        val source = SourceConfig("source", "Source", SourceKind.M3U, "https://origin.invalid/list",
+            headers = mapOf("Authorization" to "Bearer source", "User-Agent" to "player"))
+        val entry = M3uParser.parse("""
+            #EXTM3U
+            #EXTINF:-1 catchup-days="2",Channel
+            https://origin.invalid/live.m3u8
+        """.trimIndent(), source).entries.single()
+        val now = 1_800_000_000_000L
+        val programme = Programme("Channel", "Show", now - 3_600_000, now - 1_800_000)
+        assertEquals(source.headers, assertNotNull(CatchupResolver.resolve(entry, programme, now)).headers)
+        val crossOrigin = entry.copy(catchup = Catchup(source = "https://cdn.invalid/archive?utc={utc}", days = 2.0))
+        assertEquals(mapOf("User-Agent" to "player"), assertNotNull(CatchupResolver.resolve(crossOrigin, programme, now)).headers)
+    }
 }

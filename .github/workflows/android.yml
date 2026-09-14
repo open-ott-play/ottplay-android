@@ -40,8 +40,10 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -m unittest discover -s scripts/tests -v
+      - name: Validate Play listing assets
+        run: python3 scripts/validate-store-assets.py --require-screenshots
       - name: Test, lint and assemble
-        run: ./gradlew --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:assembleDebugAndroidTest
+        run: ./gradlew --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:assembleFull :app:assembleDebugAndroidTest
       - name: Upload debug APK and unsigned release APK/AAB
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -50,6 +52,7 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/release/app-release-unsigned.apk
             app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/apk/full/app-full-unsigned.apk
           if-no-files-found: error
           retention-days: 14
       - name: Upload test and lint reports
@@ -63,12 +66,13 @@ jobs:
             app/build/reports/tests/
             app/build/test-results/
             app/build/reports/lint-results-debug.*
+            app/build/reports/lint-results-release.*
           if-no-files-found: warn
           retention-days: 14
 
   emulator:
     name: Instrumented tests · ${{ matrix.device }}
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_device_tests }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' || inputs.run_device_tests }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -81,6 +85,8 @@ jobs:
             target: google_apis
             arch: x86_64
             profile: pixel_7
+            ram_mb: 3072
+            stabilize_guest: 'true'
           # SDK stable catalogue: system-images;android-36;android-tv;x86_64, revision 4.
           # This is an Android TV OS image, not a phone with overridden uiMode.
           - device: androidtv-api36
@@ -88,9 +94,13 @@ jobs:
             target: android-tv
             arch: x86_64
             profile: tv_1080p
+            ram_mb: 2048
+            stabilize_guest: 'false'
     env:
       CI_AVD_NAME: ottplay-${{ matrix.device }}
       CI_AVD_PROFILE: ${{ matrix.profile }}
+      CI_AVD_RAM_MB: ${{ matrix.ram_mb }}
+      CI_STABILIZE_GUEST: ${{ matrix.stabilize_guest }}
       CI_SYSTEM_IMAGE: system-images;android-${{ matrix.api }};${{ matrix.target }};${{ matrix.arch }}
       CI_EMULATOR_DIAGNOSTICS: app/build/reports/emulator
     steps:
@@ -113,6 +123,9 @@ jobs:
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
       - name: Install emulator and system image
         run: sdkmanager "emulator" "$CI_SYSTEM_IMAGE"
+      - name: Build test APKs before starting the emulator
+        # Release compiler memory before the guest boots on the shared runner.
+        run: ./gradlew --no-daemon --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Enable KVM for the ephemeral emulator runner
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -123,13 +136,16 @@ jobs:
           ANDROID_AVD_HOME: ${{ runner.temp }}/ottplay-avd
         run: bash scripts/ci-start-emulator.sh
       - name: Run instrumented tests
-        run: ./gradlew --no-daemon --stacktrace :app:connectedDebugAndroidTest
+        run: ./gradlew --no-daemon --stacktrace --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' :app:connectedDebugAndroidTest
       - name: Collect emulator diagnostics and stop emulator
         if: always()
         run: |
           mkdir -p "$CI_EMULATOR_DIAGNOSTICS"
           timeout 15s adb devices -l > "$CI_EMULATOR_DIAGNOSTICS/adb-devices.txt" 2>&1 || true
           timeout 20s adb -s emulator-5554 logcat -d > "$CI_EMULATOR_DIAGNOSTICS/logcat.txt" 2>&1 || true
+          timeout 20s adb -s emulator-5554 shell dumpsys dropbox --print system_server_anr > "$CI_EMULATOR_DIAGNOSTICS/system-server-anr.txt" 2>&1 || true
+          timeout 20s adb -s emulator-5554 shell dumpsys dropbox --print system_app_anr > "$CI_EMULATOR_DIAGNOSTICS/system-app-anr.txt" 2>&1 || true
+          free -m > "$CI_EMULATOR_DIAGNOSTICS/host-memory.txt"
           timeout 10s adb -s emulator-5554 emu kill || true
           if [[ -f "$CI_EMULATOR_DIAGNOSTICS/emulator.pid" ]]; then
             emulator_pid=$(cat "$CI_EMULATOR_DIAGNOSTICS/emulator.pid")

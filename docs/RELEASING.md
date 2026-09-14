@@ -1,11 +1,15 @@
 # Signed builds and publication
 
-The version is stored in `version.properties`: currently `0.2.0`, `versionCode=2`. Increase the version code before every new published preview or production release. The workflow does not move an existing tag, replace a release or overwrite assets.
+The version is stored in `version.properties`: currently `0.2.1`, `versionCode=3`. Increase the version code before every new published preview or production release. The workflow does not move an existing tag, replace a release or overwrite assets.
 
 The two channels use different Android package IDs and certificates:
 
-- **Preview:** `play.ott.foss.nativeapp.preview`, an R8-optimized APK and a signed AAB; tag `v0.2.0-preview.2`. The final tag component is the `versionCode`. This is a GitHub prerelease for testing, with no store submission.
-- **Production:** `play.ott.foss.nativeapp`, APK and AAB signed with an explicitly supplied production/upload key; tag `v0.2.0`. Missing production secrets stop the workflow. Preview/debug key fallback and unsigned APK publication are prohibited.
+- **Preview:** `play.ott.foss.nativeapp.preview`, an R8-optimized APK and a signed AAB; next tag `v0.2.1-preview.3`. The final tag component is the `versionCode`. This is a GitHub prerelease for testing, with no store submission.
+- **Production:** `play.ott.foss.nativeapp`, APK and AAB signed with an explicitly supplied production/upload key; next tag `v0.2.1`. Missing production secrets stop the workflow. Preview/debug key fallback and unsigned APK publication are prohibited.
+
+Both channels enforce HTTPS for remote sources, provider APIs, artwork, EPG, media segments and DRM requests, including redirects. The separate `full` build uses application ID `play.ott.foss.nativeapp.full` and permits HTTP for legacy personal sources. It is built with `./gradlew :app:assembleFull` and is not a Play submission artifact. Debug also permits HTTP for local test fixtures and is not publishable.
+
+When upgrading from an older build, cached catalogs containing private HTTP headers require a successful refresh before playback. The app displays a refresh instruction and preserves the encrypted old rows, source settings and preferences. This establishes the permitted server for each credential-bearing header; explicit per-entry playlist headers can target the entry's media origin, while source-level headers stay scoped to the source server.
 
 The preview installs alongside the earlier 0.1.0 app. Because its package ID differs, Android does not transfer the database or Keystore automatically: export sources from the old version and import the file into the preview. The export contains plaintext credentials; keep it local. Later previews can update an existing preview when the same signing key is retained and `versionCode` increases.
 
@@ -26,7 +30,23 @@ python3 scripts/configure-preview-signing.py \
 
 With `--repository`, the script passes values to `gh secret set` through stdin. Console output contains only backup paths and the public certificate SHA-256. Do not put the private key, passwords or credentials JSON in Git, artifacts, messages or logs. Keep a protected backup outside this computer: losing the key prevents updates to the installed preview.
 
-Five repository secrets are required with the `PREVIEW_SIGNING_` prefix: `KEYSTORE_BASE64`, `STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, `CERT_SHA256`. Production uses the same five suffixes with the `RELEASE_SIGNING_` prefix. SHA-256 is 64 hexadecimal characters without colons. The owner supplies the production key; this project does not generate it or configure a Google Play account.
+Five repository secrets are required with the `PREVIEW_SIGNING_` prefix: `KEYSTORE_BASE64`, `STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, `CERT_SHA256`. Production uses the same five suffixes with the `RELEASE_SIGNING_` prefix. SHA-256 is 64 hexadecimal characters without colons.
+
+## Upload identity
+
+For an existing Play app, retain its registered upload key or complete Google's upload-key reset procedure. Never create an unrelated replacement and assume it can update that app. `scripts/configure-upload-signing.py` validates an owner-only keystore/credentials pair, its expected certificate and access to the private key. Debug and preview identities are rejected.
+
+Only after the owner confirms that a new upload identity is appropriate:
+
+```bash
+python3 scripts/configure-upload-signing.py \
+  --keystore "$HOME/.android/ottplay-native-upload.p12" \
+  --credentials "$HOME/.android/ottplay-native-upload-signing.json" \
+  --create-new \
+  --repository open-ott-play/ottplay-android
+```
+
+Omit `--create-new` to validate and reuse an existing pair. Omit `--repository` for local validation only. The script refuses to replace any existing release secret and never prints passwords or key material. Keep protected off-device backups. Creating/configuring an upload key does not enroll Play App Signing or submit an app.
 
 ## Local builds
 
@@ -45,7 +65,7 @@ Output is written to `build/distributions/<tag>/`: signed `.apk` and `.aab` file
 
 ## Releasing through GitHub Actions
 
-1. Commit the new version and all changes to `main`. Run **Android native** with `run_device_tests=true` and wait for successful host, phone API 35 and real Android TV API 36 jobs on that exact commit.
+1. Commit the new version and all changes to `main`. **Android native** automatically runs host, phone API 35 and real Android TV API 36 jobs on pushes to `main` and pull requests. Wait for all three on the exact release commit. A manual run must set `run_device_tests=true`; PR runs validate changes but cannot satisfy the publication gate.
 2. Confirm that the five signing secrets for the selected channel are configured. Run **Signed Android release** manually on `main` and select `preview` or `production`.
 3. The workflow checks a clean checkout, matching SHA, an unused tag, increasing version/code and a successful full matrix on the same commit. It then repeats host tests/lint, builds and verifies both signatures, and produces checksums.
 4. The key is decoded only into a private temporary runner directory and removed in an `always()` step. Configuration cache is disabled for signed builds. Artifacts contain release files and reports, not the keystore. The build job has read-only repository access.

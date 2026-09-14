@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import play.ott.nativeapp.core.SourceConfig
 import play.ott.nativeapp.core.SourceKind
+import play.ott.nativeapp.AppTransportPolicy
 import java.net.URI
 import java.util.UUID
 
@@ -120,10 +121,14 @@ internal fun SourceEditor(
                 val hours = if (catchupHours.isBlank()) 0.0 else catchupHours.trim().replace(',', '.').toDoubleOrNull()
                 validation = when {
                     name.isBlank() -> "Введите название источника."
-                    !isHttpUrl(cleanUrl) && !(localSource && cleanUrl == original?.url) -> "Введите корректный адрес источника: http:// или https://."
+                    !isAllowedNetworkUrl(cleanUrl) && !(localSource && cleanUrl == original?.url) ->
+                        if (AppTransportPolicy.current.allowInsecureHttp) "Введите корректный адрес источника: http:// или https://."
+                        else "Для этой версии нужен защищённый адрес источника: https://."
                     kind == SourceKind.XTREAM && (username.isBlank() || password.isBlank()) -> "Введите логин и пароль провайдера."
                     kind == SourceKind.STALKER && !Regex("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}").matches(mac.trim()) -> "Введите MAC-адрес, например 00:1A:79:00:00:00."
-                    epgUrl.isNotBlank() && !isHttpUrl(epgUrl.trim()) -> "Введите корректный адрес телепрограммы или оставьте поле пустым."
+                    epgUrl.isNotBlank() && !isAllowedNetworkUrl(epgUrl.trim()) ->
+                        if (AppTransportPolicy.current.allowInsecureHttp) "Введите корректный адрес телепрограммы или оставьте поле пустым."
+                        else "Укажите адрес телепрограммы https:// или оставьте поле пустым."
                     parsedHeaders == null -> "Проверьте заголовки: по одному имя: значение на строку."
                     kind == SourceKind.M3U && (hours == null || !hours.isFinite() || hours < 0) -> "Укажите неотрицательное число часов архива."
                     else -> null
@@ -149,6 +154,9 @@ private fun isHttpUrl(value: String): Boolean = runCatching {
     val uri = URI(value)
     uri.scheme in listOf("http", "https") && !uri.host.isNullOrBlank()
 }.getOrDefault(false)
+
+private fun isAllowedNetworkUrl(value: String): Boolean = isHttpUrl(value) &&
+    runCatching { AppTransportPolicy.current.requireHttpUrl(value) }.isSuccess
 
 private fun parseHeaders(text: String): Map<String, String>? {
     val result = linkedMapOf<String, String>()

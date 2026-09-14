@@ -2,7 +2,7 @@
 
 A standalone Android app for personal IPTV playlists, movies, and series. The interface uses Kotlin and Jetpack Compose; playback runs through Android Media3 / ExoPlayer. The app supports touch controls and Android TV remotes.
 
-This is a separate product with application ID `play.ott.foss.nativeapp`. It can be installed alongside `ottplay-foss`. Signed previews use the separate ID `play.ott.foss.nativeapp.preview`, with a stable signing identity configured independently from production. Neither running nor building the app requires the JavaScript player, WebView, Capacitor, or Node.js. The current project version is `0.2.0`; implementing a feature does not establish compatibility with every TV, codec, or provider service.
+This is a separate product with application ID `play.ott.foss.nativeapp`. It can be installed alongside `ottplay-foss`. Signed previews use the separate ID `play.ott.foss.nativeapp.preview`, with a stable signing identity configured independently from production. Neither running nor building the app requires the JavaScript player, WebView, Capacitor, or Node.js. The current project version is `0.2.1`; implementing a feature does not establish compatibility with every TV, codec, or provider service.
 
 ## Getting started
 
@@ -15,11 +15,11 @@ The app does not provide a subscription, a built-in commercial catalog, or permi
 
 ## Implemented features
 
-- **M3U:** HTTP(S) downloads and selected-file imports, groups, names, logos, `tvg-id`, XMLTV, and standard HTTP headers. An HLS manifest is treated as one stream. Catch-up supports `default`, `append`, Flussonic, and recognized time placeholders; a fallback archive duration in hours can be set when the playlist has no catch-up tags.
+- **M3U:** HTTPS downloads (HTTP is available in the separate full build) and selected-file imports, groups, names, logos, `tvg-id`, XMLTV, and standard HTTP headers. An HLS manifest is treated as one stream. Catch-up supports `default`, `append`, Flussonic, and recognized time placeholders; a fallback archive duration in hours can be set when the playlist has no catch-up tags.
 - **Xtream:** separate APIs for live TV, movies, series, and episodes, plus the older combined `player_api.php` response containing `live_streams` and `categories`. Catch-up uses server time. Unsupported optional sections returning HTTP 404/405/501 are reported explicitly; authentication, network, and server errors are not treated as successful empty catalogs.
 - **Stalker:** classic MAG handshake, profile, paginated channel lists, and `create_link`. The older FOSS JSON-RPC protocol uses an explicitly configured endpoint ending in `/api/`. These are different protocols; see the [migration guide](docs/MIGRATION.md).
 - **Interface:** Compose layouts for touch and TV, search, groups, favorites, movies, seasons and episodes, programme listings, and available catch-up playback. TV receives focus at launch and restores it when returning from the player. The native player menu selects available audio tracks, subtitles, speed, and scaling; the remote's Menu key opens it.
-- **Playback:** a Media3 `MediaSessionService`, system media-session controls, background playback, and explicit stop. System PiP is available on supported devices. It displays the current stream, not a second channel playing simultaneously. The service saves movie positions on pause, seek, item changes, and every five seconds, including while the screen is closed; completed movies restart from the beginning.
+- **Playback:** a Media3 `MediaSessionService`, system media-session controls, phone background playback, and explicit stop. System PiP is available on supported phones. Android TV pauses when leaving the app and does not offer video PiP. It displays the current stream, not a second channel playing simultaneously. The service saves movie positions on pause, seek, item changes, and every five seconds, including while the screen is closed; completed movies restart from the beginning.
 - **Data:** a local SQLite catalog and EPG. Source settings, saved stream URLs, and EPG URLs use AES-GCM encryption with an Android Keystore key. Source data is excluded from Android backup. Selected sources can be exported and imported as JSON.
 - **EPG refresh:** WorkManager requests periodic work every six hours on an unmetered network. Android may defer execution; the interval is not a guaranteed schedule. Channel-list refresh is a separate action in the app.
 
@@ -29,9 +29,9 @@ Personal M3U playlists, Xtream, and the two Stalker protocols described above ar
 
 Supported Kodi license properties become native Media3 configurations for Widevine, PlayReady, and ClearKey. License URLs and headers are isolated from stream requests; unknown license transformations are rejected explicitly. Compatibility depends on the device's DRM module, container, provider license, and decoders. Unit tests do not establish acceptance for paid services or hardware DRM. The precise contract is documented in [docs/DRM.md](docs/DRM.md).
 
-HTTP is allowed for personal sources and does not encrypt transmitted data. Settings exports are plain JSON containing source URLs and credentials. Treat an export as a file containing passwords. Local-storage encryption does not encrypt exported files.
+Release and preview enforce HTTPS for remote sources, provider APIs, artwork, EPG, media segments and DRM, including redirects. A separate `full` build (`play.ott.foss.nativeapp.full`) permits HTTP for legacy personal sources; HTTP does not encrypt transmitted data. Debug also permits HTTP for local test fixtures. Settings exports are plain JSON containing source URLs and credentials. Treat an export as a file containing passwords. Local-storage encryption does not encrypt exported files.
 
-Google Play submission and content rights require separate preparation. The signed preview was published through a dedicated workflow that verifies the version, certificate, and complete phone/TV test matrix. The certificate and future release procedure are documented in [docs/RELEASING.md](docs/RELEASING.md); the [publication report](docs/validation/native-0.2-preview-release-results.json) records the source commit and verified artifacts. Store approval and Android TV certification are not claimed.
+The offline privacy policy is available before setup and in settings. The [public privacy policy](https://astral-oasis-sbqd.here.now/) and [Play submission pack](docs/PLAY-CONSOLE-SUBMISSION.md) document current data flows and remaining Console steps. Google Play submission and content rights require separate preparation. The signed preview was published through a dedicated workflow that verifies the version, certificate, and complete phone/TV test matrix. The certificate and future release procedure are documented in [docs/RELEASING.md](docs/RELEASING.md); the [publication report](docs/validation/native-0.2-preview-release-results.json) records the source commit and verified artifacts. Store approval and Android TV certification are not claimed.
 
 ## Building
 
@@ -68,13 +68,17 @@ These tests exercise the app, media service, bundled-video decoding, Compose UI,
 
 ## CI and validation
 
+Version 0.2.1 passed 80 local JVM tests, 40 release/store/signing/CI-tool checks, and all 21 distinct instrumentation scenarios on each of the phone and TV emulators across a full run and targeted rerun. Release APK/AAB checks, actual release captures and the precise signing/device/Console boundaries are documented in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md).
+
 Version 0.2 passed 68 local JVM tests, 16 Android API 35 tests, and 10 release-tooling checks. Coverage includes real ClearKey DRM, interaction with the actual Activity, and position persistence while the screen is closed. Details and hosted CI results are in [docs/VALIDATION-0.2.md](docs/VALIDATION-0.2.md). The first phone/TV matrix history is preserved in [docs/VALIDATION.md](docs/VALIDATION.md).
 
 The [Android workflow](.github/workflows/android.yml) runs core and Android unit tests, lint, and debug/release APK builds on pushes and pull requests. APKs and reports are uploaded as run artifacts. [Dependabot](.github/dependabot.yml) maintains GitHub Actions and Gradle dependencies.
 
-For manual workflow runs, `run_device_tests` enables two equally required jobs: phone API 35 (`google_apis`, `x86_64`, `pixel_7` profile) and Android TV API 36 (`android-tv`, `x86_64`, `tv_1080p` profile). The TV job uses a separate TV OS image; both jobs run the complete instrumentation suite and retain separate reports. Package `system-images;android-36;android-tv;x86_64`, revision 4, was verified in the stable `sdkmanager --list --channel=0` catalog. Emulator jobs are disabled by default. The workflow defines the validation procedure; each run's reports establish its results. Host tests, emulator tests, and physical-device experience are different levels of evidence.
+For manual workflow runs, `run_device_tests` enables two equally required jobs: phone API 35 (`google_apis`, `x86_64`, `pixel_7` profile) and Android TV API 36 (`android-tv`, `x86_64`, `tv_1080p` profile). The TV job uses a separate TV OS image; both jobs run the complete instrumentation suite and retain separate reports. Package `system-images;android-36;android-tv;x86_64`, revision 4, was verified in the stable `sdkmanager --list --channel=0` catalog. Both emulator jobs run automatically on pull requests and pushes to main; manual runs enable them with `run_device_tests=true`. The workflow defines the validation procedure; each run's reports establish its results. Host tests, emulator tests, and physical-device experience are different levels of evidence.
 
-Migration from the older app is described in [docs/MIGRATION.md](docs/MIGRATION.md). Completed checks, results, and screenshots of the actual Android interface are collected in [docs/VALIDATION-0.2.md](docs/VALIDATION-0.2.md).
+Migration from the older app is described in [docs/MIGRATION.md](docs/MIGRATION.md). Current checks and release captures are collected in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md) and [store](store/README.md).
+
+Device jobs compile their APKs before booting Android and limit the remaining Gradle process to one worker and a 1536 MB heap. The Google APIs phone uses 3072 MB RAM and must sustain 30 seconds below the configured guest CPU/memory/I/O pressure thresholds within five minutes before tests start. The userdebug emulator's `su` reads those protected pressure files; the ADB daemon, app, and instrumentation retain their normal privileges. Pressure samples and system ANR reports are retained as diagnostics; a readiness timeout or failing test fails the job. The TV image retains 2048 MB RAM.
 
 ## Authoring language
 

@@ -9,11 +9,16 @@ set -euo pipefail
 : "${CI_EMULATOR_DIAGNOSTICS:?}"
 
 mkdir -p "$ANDROID_AVD_HOME" "$CI_EMULATOR_DIAGNOSTICS"
+avd_ram_mb=${CI_AVD_RAM_MB:-2048}
+case "$avd_ram_mb" in
+  2048|3072) ;;
+  *) echo 'CI_AVD_RAM_MB must be 2048 or 3072.' >&2; exit 1 ;;
+esac
 printf 'no\n' | timeout 120s avdmanager create avd --force \
   --name "$CI_AVD_NAME" --package "$CI_SYSTEM_IMAGE" --device "$CI_AVD_PROFILE"
-cat >> "$ANDROID_AVD_HOME/$CI_AVD_NAME.avd/config.ini" <<'CONFIG'
+cat >> "$ANDROID_AVD_HOME/$CI_AVD_NAME.avd/config.ini" <<CONFIG
 hw.cpu.ncore=2
-hw.ramSize=2048
+hw.ramSize=$avd_ram_mb
 vm.heapSize=512
 disk.dataPartition.size=2048M
 CONFIG
@@ -45,6 +50,9 @@ while (( SECONDS < boot_deadline )); do
      timeout 10s adb -s emulator-5554 shell settings put global animator_duration_scale 0.0; then
     echo 'Android boot, package manager, input service and animation settings are ready.'
     timeout 10s adb -s emulator-5554 shell getprop > "$CI_EMULATOR_DIAGNOSTICS/device-properties.txt"
+    if [[ "${CI_STABILIZE_GUEST:-false}" == 'true' ]]; then
+      python3 scripts/ci-wait-for-guest-idle.py
+    fi
     exit 0
   fi
   sleep 2

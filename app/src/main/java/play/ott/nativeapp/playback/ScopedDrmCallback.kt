@@ -14,12 +14,19 @@ import okhttp3.OkHttpClient
 import okhttp3.ResponseBody.Companion.toResponseBody
 import play.ott.nativeapp.core.DrmConfig
 import play.ott.nativeapp.core.DrmPolicy
+import play.ott.nativeapp.AppTransportPolicy
+import play.ott.nativeapp.core.RemoteTransportPolicy
 
 /** Native MediaDrm challenge/response, with no wrappers or key extraction. */
 @UnstableApi
-internal class ScopedDrmCallback(config: DrmConfig, client: OkHttpClient) : MediaDrmCallback {
-    private val config = DrmPolicy.validated(config)
-    private val licenseHttp = client.newBuilder().followRedirects(false).followSslRedirects(false)
+internal class ScopedDrmCallback(
+    config: DrmConfig,
+    client: OkHttpClient,
+    private val transportPolicy: RemoteTransportPolicy = AppTransportPolicy.current,
+) : MediaDrmCallback {
+    private val config = DrmPolicy.validated(config).also { transportPolicy.requireHttpUrl(it.licenseUrl) }
+    private val transportClient = transportPolicy.secure(client)
+    private val licenseHttp = transportClient.newBuilder().followRedirects(false).followSslRedirects(false)
         .addInterceptor { chain ->
             val response = chain.proceed(chain.request())
             val body = response.body
@@ -44,7 +51,7 @@ internal class ScopedDrmCallback(config: DrmConfig, client: OkHttpClient) : Medi
         this@ScopedDrmCallback.config.licenseHeaders.forEach { (name, value) -> setKeyRequestProperty(name, value) }
     }
     // Android supplies the provisioning URL. It must never receive provider license/stream headers.
-    private val provisioning = HttpMediaDrmCallback(null, OkHttpDataSource.Factory(client))
+    private val provisioning = HttpMediaDrmCallback(null, OkHttpDataSource.Factory(transportClient))
 
     override fun executeKeyRequest(uuid: UUID, request: ExoMediaDrm.KeyRequest): MediaDrmCallback.Response =
         license.executeKeyRequest(uuid, request)
@@ -66,6 +73,7 @@ internal class ScopedDrmCallback(config: DrmConfig, client: OkHttpClient) : Medi
                     val requestedUri = try { previousUri.resolve(dataSpec.uri.toString()) } catch (_: Exception) { null }
                     val requested = try { requestedUri?.let { origin(it.toString()) } } catch (_: Exception) { null }
                     if (requested != allowed || requestedUri == null) throw IOException("DRM license redirect to another origin is unsupported")
+                    transportPolicy.requireHttpUrl(requestedUri.toString())
                     previousUri = requestedUri
                     received = 0L
                     val length = delegate.open(dataSpec.buildUpon().setUri(requestedUri.toString()).build())

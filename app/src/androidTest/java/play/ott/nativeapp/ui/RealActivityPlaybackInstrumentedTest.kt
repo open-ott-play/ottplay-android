@@ -1,9 +1,14 @@
 package play.ott.nativeapp.ui
 
-import android.content.Intent
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.ParcelFileDescriptor
 import android.view.KeyEvent
 import android.view.View
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
@@ -19,19 +24,24 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.xmlpull.v1.XmlPullParser
 import play.ott.nativeapp.MainActivity
 import play.ott.nativeapp.OttplayApplication
+import play.ott.nativeapp.TvActivity
 import play.ott.nativeapp.data.NativeRepository
 import play.ott.nativeapp.data.UserPreferences
 import play.ott.nativeapp.playback.PlaybackTestLifecycle
@@ -66,24 +76,8 @@ class RealActivityPlaybackInstrumentedTest {
     }
 
     @Test fun coldLaunchSelectsWithRemoteAndNativeControlsChangeActualPlayback() {
-        val launch = requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        activity = instrumentation.startActivitySync(launch) as MainActivity
-        awaitNode("catalog-item-$entryId")
-        awaitActivityWindowReady(requireNotNull(activity), hideIme = true)
-        if (isTv) {
-            // Crucially no RequestFocus or touch injection: launch must create usable remote focus.
-            awaitFocused("library-tab-MOVIES")
-            key(KeyEvent.KEYCODE_DPAD_RIGHT)
-            compose.onNodeWithTag("catalog-item-$entryId").assertIsFocused()
-            key(KeyEvent.KEYCODE_DPAD_CENTER)
-        } else compose.onNodeWithTag("catalog-item-$entryId").performClick()
-        awaitNode("player-container")
-        val playerView = awaitPlayerView()
+        val playerView = launchAndPlayDemo()
         val actualPlayer = requireNotNull(playerView.player)
-        // Keep the eight-second deterministic fixture available while interacting with menus.
-        onMain { requireNotNull(playerView.player).repeatMode = Player.REPEAT_MODE_ONE }
-        awaitPlayback("Video must actually decode") { it.isPlaying && it.videoSize.width > 0 && it.currentPosition > 100 }
         if (isTv) {
             awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
             key(KeyEvent.KEYCODE_DPAD_CENTER)
@@ -113,6 +107,146 @@ class RealActivityPlaybackInstrumentedTest {
         awaitNode("now-playing-bar")
         if (isTv) awaitFocused("catalog-item-$entryId")
         awaitPlaybackWithoutSurface("Leaving fullscreen must keep the service playing", actualPlayer) { it.isPlaying }
+    }
+
+    @Test fun homePausesTelevisionVideoAndPreservesPhonePictureInPicture() {
+        val actualPlayer = requireNotNull(launchAndPlayDemo().player)
+        val supportsPhonePip = !isTv && context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+        openOptions()
+        if (supportsPhonePip) compose.onNodeWithTag("player-pip").performScrollTo().assertIsDisplayed()
+        else compose.onNodeWithTag("player-pip").assertDoesNotExist()
+        key(KeyEvent.KEYCODE_BACK)
+        awaitActivityWindowReady(requireNotNull(activity), acknowledgeImmersiveTutorial = true)
+
+        assertTrue("The system must accept Home", instrumentation.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME))
+        awaitState("Home did not complete the Activity transition") {
+            var transitioned = false
+            onMain {
+                val current = requireNotNull(activity)
+                transitioned = if (supportsPhonePip) current.isInPictureInPictureMode
+                else ActivityLifecycleMonitorRegistry.getInstance().getLifecycleStageOf(current) == Stage.STOPPED
+            }
+            transitioned
+        }
+        if (isTv) {
+            onMain { assertFalse("TV must never enter video PiP", requireNotNull(activity).isInPictureInPictureMode) }
+            awaitPlaybackWithoutSurface("Home must pause TV even when background playback is enabled", actualPlayer) {
+                !it.playWhenReady && !it.isPlaying && it.currentMediaItem?.mediaId == entryId
+            }
+            // Model a provider request that completes after onStop: it cannot restart hidden TV video.
+            onMain { actualPlayer.play() }
+            awaitPlaybackWithoutSurface("A late Play must not restart TV video behind Home", actualPlayer) { !it.playWhenReady }
+        } else {
+            var position = 0L
+            onMain { position = actualPlayer.currentPosition }
+            awaitPlaybackWithoutSurface("Phone playback must continue after Home", actualPlayer) {
+                it.isPlaying && it.currentMediaItem?.mediaId == entryId && it.currentPosition != position
+            }
+        }
+
+        // Returning through the launcher keeps the paused TV item available for an explicit resume.
+        returnThroughSystemLauncher()
+        awaitActivityWindowReady(requireNotNull(activity), acknowledgeImmersiveTutorial = true)
+        if (isTv) {
+            awaitPlayback("Returning to TV must preserve the paused video") { !it.playWhenReady && it.currentMediaItem?.mediaId == entryId }
+            awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
+            key(KeyEvent.KEYCODE_DPAD_CENTER)
+            awaitPlayback("TV playback must resume when the user presses Play") { it.isPlaying }
+        }
+    }
+
+    private fun returnThroughSystemLauncher() {
+        // Resolve as the system launcher, independently of the app's package-visibility filters.
+        val home = requireNotNull(shellOutput(
+            "cmd package resolve-activity --brief --user current -a android.intent.action.MAIN -c android.intent.category.HOME",
+        ).lineSequence().mapNotNull { ComponentName.unflattenFromString(it.trim()) }.lastOrNull())
+        val automation = instrumentation.uiAutomation
+        val originalFlags = automation.serviceInfo.flags
+        automation.serviceInfo = automation.serviceInfo.apply {
+            flags = flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        }
+        var windowsDescription = "not observed"
+        try {
+            awaitState("Home must have focus before reopening the app") {
+                val windows = automation.windows
+                windowsDescription = windows.joinToString { window ->
+                    "id=${window.id}, type=${window.type}, focused=${window.isFocused}, active=${window.isActive}, package=${window.root?.packageName}"
+                }
+                // In PiP, the accessibility active window can still be the player.
+                // Input focus belongs to the separate Home window, so inspect that window explicitly.
+                windows.any { window ->
+                    window.type == AccessibilityWindowInfo.TYPE_APPLICATION && window.isFocused &&
+                        window.root?.packageName?.toString() == home.packageName
+                }
+            }
+        } catch (failure: AssertionError) {
+            val systemFocus = shellOutput("dumpsys window").lineSequence()
+                .filter { it.contains("mCurrentFocus=") || it.contains("mFocusedApp=") }.joinToString()
+            throw AssertionError("Home focus not observed: expected=${home.flattenToShortString()}; windows=[$windowsDescription]; $systemFocus", failure)
+        } finally {
+            automation.serviceInfo = automation.serviceInfo.apply { flags = originalFlags }
+        }
+        // The PiP callback precedes the end of Home's animation. Let the system finish
+        // that transition before launching again, as a user selecting the launcher would.
+        instrumentation.uiAutomation.waitForIdle(250, 5_000)
+        val launch = requireNotNull(PlaybackTestLifecycle.launchIntent().component)
+        val component = launch.flattenToString()
+        check(Regex("[A-Za-z0-9_.]+/[A-Za-z0-9_.]+").matches(component))
+        val output = shellOutput("am start -W -n $component")
+        assertTrue("System launcher did not open the app: $output", output.lineSequence().any { it.trim() == "Status: ok" })
+        awaitState("The launched Activity did not resume") {
+            var resumed: MainActivity? = null
+            onMain {
+                resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .filterIsInstance<MainActivity>().firstOrNull { it.componentName == launch }
+            }
+            if (resumed != null) activity = resumed
+            resumed != null
+        }
+    }
+
+    private fun shellOutput(command: String): String = ParcelFileDescriptor.AutoCloseInputStream(
+        instrumentation.uiAutomation.executeShellCommand(command),
+    ).bufferedReader().use { it.readText() }
+
+    private fun launchAndPlayDemo(): PlayerView {
+        val launch = PlaybackTestLifecycle.launchIntent()
+        activity = instrumentation.startActivitySync(launch) as MainActivity
+        val launched = requireNotNull(activity)
+        assertEquals("The actual launcher Activity must match the device", isTv, launched is TvActivity)
+        assertLauncherPipDeclaration(launched)
+        awaitNode("catalog-item-$entryId")
+        awaitActivityWindowReady(requireNotNull(activity), hideIme = true)
+        if (isTv) {
+            // Crucially no RequestFocus or touch injection: launch must create usable remote focus.
+            awaitFocused("library-tab-MOVIES")
+            key(KeyEvent.KEYCODE_DPAD_RIGHT)
+            compose.onNodeWithTag("catalog-item-$entryId").assertIsFocused()
+            key(KeyEvent.KEYCODE_DPAD_CENTER)
+        } else compose.onNodeWithTag("catalog-item-$entryId").performClick()
+        awaitNode("player-container")
+        val playerView = awaitPlayerView()
+        // Keep the eight-second deterministic fixture available while interacting with menus.
+        onMain { requireNotNull(playerView.player).repeatMode = Player.REPEAT_MODE_ONE }
+        awaitPlayback("Video must actually decode") { it.isPlaying && it.videoSize.width > 0 && it.currentPosition > 100 }
+        return playerView
+    }
+
+    private fun assertLauncherPipDeclaration(launched: MainActivity) {
+        // Read the installed binary manifest; ActivityInfo's PiP flag is not public SDK API.
+        val namespace = "http://schemas.android.com/apk/res/android"
+        val names = setOf(launched.componentName.className, ".${launched.javaClass.simpleName}")
+        var supportsPip: Boolean? = null
+        context.assets.openXmlResourceParser("AndroidManifest.xml").use { manifest ->
+            while (manifest.next() != XmlPullParser.END_DOCUMENT) {
+                if (manifest.eventType == XmlPullParser.START_TAG && manifest.name == "activity" &&
+                    manifest.getAttributeValue(namespace, "name") in names) {
+                    supportsPip = manifest.getAttributeBooleanValue(namespace, "supportsPictureInPicture", false)
+                    break
+                }
+            }
+        }
+        assertEquals("Only the phone launcher may declare PiP support in the installed manifest", !isTv, supportsPip)
     }
 
     private fun openOptions() {

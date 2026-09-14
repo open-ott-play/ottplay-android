@@ -32,7 +32,7 @@ import play.ott.nativeapp.ui.AppAction
 import play.ott.nativeapp.ui.OttNativeApp
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-class MainActivity : ComponentActivity() {
+open class MainActivity : ComponentActivity() {
     private val model: PlayerViewModel by viewModels()
     private var controller by mutableStateOf<MediaController?>(null)
     private var pip by mutableStateOf(false)
@@ -124,7 +124,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun supportsPip(): Boolean = packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+    private val isTelevision: Boolean
+        get() = resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+
+    private fun supportsPip(): Boolean = !isTelevision && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
     private fun pipParameters(): PictureInPictureParams {
         val size = controller?.videoSize
@@ -156,7 +159,10 @@ class MainActivity : ComponentActivity() {
         if (!pip) setFullscreen(fullScreen)
     }
     override fun onStop() {
-        if (!isChangingConfigurations && !isInPictureInPictureMode && !model.state.value.backgroundPlayback) controller?.pause()
+        // The service owns TV visibility, including after this Activity is destroyed.
+        if (!isTelevision && !isChangingConfigurations && !isInPictureInPictureMode && !model.state.value.backgroundPlayback) {
+            controller?.pause()
+        }
         super.onStop()
     }
     override fun onDestroy() {

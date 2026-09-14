@@ -25,6 +25,7 @@ object M3uParser {
             val url = httpUrl(baseUrl).toString()
             return Catalog(listOf(MediaEntry(stableId(config.id, url), config.id, config.name.ifBlank { "HLS stream" }, url,
                 headers = mergedHeaders(config.headers), drm = drm.drm, mimeType = "application/x-mpegURL",
+                headerOrigins = headerOrigins(config.headers, config.url),
                 playbackUnsupportedReason = drm.unsupportedReason)), listOfNotNull(config.epgUrl.takeIf(String::isNotBlank)),
                 listOfNotNull(drm.unsupportedReason))
         }
@@ -119,7 +120,9 @@ object M3uParser {
                     val catchupSource = allAttrs["catchup-source"].orEmpty()
                     val catchup = if (catchupMode.equals("none", true)) null else if (days > 0 || catchupSource.isNotEmpty() || catchupMode.isNotEmpty())
                         Catchup(catchupMode.ifBlank { "default" }, catchupSource, days) else null
-                    val headers = mergedHeaders(config.headers, entryHeaders, if ('|' in line) queryHeaders(line.substringAfter('|')) else emptyMap())
+                    val explicitHeaders = mergedHeaders(entryHeaders, if ('|' in line) queryHeaders(line.substringAfter('|')) else emptyMap())
+                    val headers = mergedHeaders(config.headers, explicitHeaders)
+                    val origins = headerOrigins(config.headers, config.url) + headerOrigins(explicitHeaders, url)
                     val id = stableId(config.id, attrs["tvg-id"].orEmpty().ifBlank { url }, title)
                     val drm = kodi.result()
                     drm.unsupportedReason?.let(notes::add)
@@ -129,6 +132,7 @@ object M3uParser {
                         group = entryGroup, logo = resolveHttp(baseUrl, attrs["tvg-logo"].orEmpty()),
                         epgId = attrs["tvg-id"].orEmpty(), headers = headers, catchup = catchup,
                         drm = drm.drm, mimeType = drm.mimeType, playbackUnsupportedReason = drm.unsupportedReason,
+                        headerOrigins = origins,
                     ))
                     if (entries.size > 100_000) throw ProviderException("Playlist contains more than 100,000 entries")
                     reset()

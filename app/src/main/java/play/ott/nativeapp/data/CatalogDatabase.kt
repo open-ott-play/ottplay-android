@@ -4,12 +4,14 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import androidx.core.database.sqlite.transaction
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import play.ott.nativeapp.core.Catalog
 import play.ott.nativeapp.core.MediaEntry
 import play.ott.nativeapp.core.Programme
+import play.ott.nativeapp.core.needsHeaderOriginRefresh
 
 @Serializable
 private data class CatalogMetadata(val format: Int = 2, val epgUrls: List<String> = emptyList(), val notes: List<String> = emptyList())
@@ -29,8 +31,7 @@ class CatalogDatabase(context: Context, private val vault: SourceVault) :
 
     fun replace(sourceId: String, catalog: Catalog) {
         val db = writableDatabase
-        db.beginTransaction()
-        try {
+        db.transaction {
             db.delete("entries", "source_id=?", arrayOf(sourceId))
             db.compileStatement("INSERT OR REPLACE INTO entries VALUES(?,?,?,?)").use { insert ->
                 // One Keystore operation per bounded block, rather than one per channel.
@@ -60,8 +61,7 @@ class CatalogDatabase(context: Context, private val vault: SourceVault) :
                 put("payload", vault.encrypt(json.encodeToString(CatalogMetadata(epgUrls = catalog.epgUrls, notes = catalog.notes)).encodeToByteArray()))
                 put("updated_ms", System.currentTimeMillis())
             }, SQLiteDatabase.CONFLICT_REPLACE)
-            db.setTransactionSuccessful()
-        } finally { db.endTransaction() }
+        }
     }
 
     fun read(sourceId: String): Catalog {
@@ -86,14 +86,17 @@ class CatalogDatabase(context: Context, private val vault: SourceVault) :
                 else addAll(json.decodeFromString<List<MediaEntry>>(text))
             }
         }}
+        // Refresh legacy snapshots before playback can reinterpret source credentials as CDN
+        // credentials. Keep the encrypted rows intact until a successful atomic replacement.
+        if (entries.any { it.needsHeaderOriginRefresh() }) return Catalog(emptyList(), notes =
+            listOf("Обновите каталог, чтобы проверить адреса передачи учётных данных."))
         return Catalog(entries, info.epgUrls, info.notes)
         } finally { db.endTransaction() }
     }
 
     fun replaceEpg(sourceId: String, programmes: List<Programme>) {
         val db = writableDatabase
-        db.beginTransaction()
-        try {
+        db.transaction {
             db.delete("epg", "source_id=?", arrayOf(sourceId))
             db.compileStatement("INSERT OR REPLACE INTO epg VALUES(?,?,?,?,?,?)").use { insert ->
                 programmes.forEach {
@@ -103,8 +106,7 @@ class CatalogDatabase(context: Context, private val vault: SourceVault) :
                     insert.executeInsert()
                 }
             }
-            db.setTransactionSuccessful()
-        } finally { db.endTransaction() }
+        }
     }
 
     fun programmes(entry: MediaEntry): List<Programme> {
@@ -121,10 +123,8 @@ class CatalogDatabase(context: Context, private val vault: SourceVault) :
 
     fun delete(sourceId: String) {
         val db = writableDatabase
-        db.beginTransaction()
-        try {
+        db.transaction {
             listOf("entries", "epg", "catalogs").forEach { db.delete(it, "source_id=?", arrayOf(sourceId)) }
-            db.setTransactionSuccessful()
-        } finally { db.endTransaction() }
+        }
     }
 }

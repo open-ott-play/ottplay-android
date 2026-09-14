@@ -105,6 +105,7 @@ fun OttNativeApp(
     var group by rememberSaveable(state.selectedSourceId, tab) { mutableStateOf("") }
     var showSources by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showPrivacy by rememberSaveable { mutableStateOf(false) }
     var sourceEditorOpen by rememberSaveable { mutableStateOf(false) }
     var sourceEditorId by rememberSaveable { mutableStateOf<String?>(null) }
     var fullscreen by rememberSaveable { mutableStateOf(false) }
@@ -168,7 +169,7 @@ fun OttNativeApp(
     LaunchedEffect(state.notice) {
         state.notice?.let { snackbar.showSnackbar(it); onAction(AppAction.DismissNotice) }
     }
-    BackHandler(enabled = state.playingEntry != null && state.epgEntry == null && state.seriesEntry == null && !showSources && !showSettings && !sourceEditorOpen) {
+    BackHandler(enabled = state.playingEntry != null && state.epgEntry == null && state.seriesEntry == null && !showSources && !showSettings && !showPrivacy && !sourceEditorOpen) {
         if (fullscreen) fullscreen = false else onAction(AppAction.StopPlayback)
     }
     OttTheme {
@@ -226,6 +227,7 @@ fun OttNativeApp(
                                         onAdd = { sourceEditorId = null; sourceEditorOpen = true },
                                         onImport = { onAction(AppAction.ImportPlaylist) },
                                         onDemo = { onAction(AppAction.AddDemo) },
+                                        onPrivacy = { showPrivacy = true },
                                         initialFocus = welcomeFocus,
                                     )
                                 } else {
@@ -301,7 +303,8 @@ fun OttNativeApp(
                 sourceEditorId = source?.id; sourceEditorOpen = true
             })
         }
-        if (showSettings) SettingsDialog(state, onAction) { showSettings = false }
+        if (showSettings && !showPrivacy) SettingsDialog(state, onAction, onPrivacy = { showPrivacy = true }) { showSettings = false }
+        if (showPrivacy) PrivacyPolicyDialog { showPrivacy = false }
         if (sourceEditorOpen) {
             SourceEditor(state.sources.firstOrNull { it.id == sourceEditorId }, { sourceEditorOpen = false }) {
                 onAction(AppAction.SaveSource(it)); sourceEditorOpen = false; showSources = false
@@ -353,7 +356,7 @@ private fun LibraryHeader(title: String, source: SourceConfig?, sources: List<So
 }
 
 @Composable
-private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit, onDemo: () -> Unit, initialFocus: FocusRequester) {
+private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit, onDemo: () -> Unit, onPrivacy: () -> Unit, initialFocus: FocusRequester) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.Start) {
         Text("ДОБРО ПОЖАЛОВАТЬ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(20.dp))
@@ -368,6 +371,8 @@ private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit,
         ActionButton("Попробовать демо", onDemo)
         Spacer(Modifier.height(20.dp))
         Text("Для демо не нужен аккаунт. Вы сможете удалить источник в любой момент.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        ActionButton("Политика конфиденциальности", onPrivacy, Modifier.testTag("welcome-privacy"), compact = true)
     }
 }
 
@@ -449,25 +454,31 @@ private fun SourcesDialog(state: AppUiState, onAction: (AppAction) -> Unit, onDi
 }
 
 @Composable
-private fun SettingsDialog(state: AppUiState, onAction: (AppAction) -> Unit, onDismiss: () -> Unit) {
+private fun SettingsDialog(state: AppUiState, onAction: (AppAction) -> Unit, onPrivacy: () -> Unit, onDismiss: () -> Unit) {
+    val configuration = LocalConfiguration.current
+    val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Настройки") },
         text = {
             Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Фоновое воспроизведение", style = MaterialTheme.typography.titleSmall)
-                        Text("Продолжать звук при сворачивании приложения", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!isTv) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Фоновое воспроизведение", style = MaterialTheme.typography.titleSmall)
+                            Text("Продолжать звук при сворачивании приложения", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = state.backgroundPlayback, onCheckedChange = { onAction(AppAction.SetBackgroundPlayback(it)) }, modifier = Modifier.semantics { contentDescription = "Фоновое воспроизведение" })
                     }
-                    Switch(checked = state.backgroundPlayback, onCheckedChange = { onAction(AppAction.SetBackgroundPlayback(it)) }, modifier = Modifier.semantics { contentDescription = "Фоновое воспроизведение" })
+                    HorizontalDivider()
                 }
-                HorizontalDivider()
                 Text("Резервная копия", style = MaterialTheme.typography.titleSmall)
                 Text("Настройки источников могут содержать пароли. Сохраните файл в надёжном месте.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ActionButton("Экспортировать настройки", { onAction(AppAction.ExportSettings); onDismiss() }, Modifier.fillMaxWidth())
                 ActionButton("Импортировать настройки", { onAction(AppAction.ImportSettings); onDismiss() }, Modifier.fillMaxWidth())
                 ActionButton("Добавить демоисточник", { onAction(AppAction.AddDemo); onDismiss() }, Modifier.fillMaxWidth())
+                HorizontalDivider()
+                ActionButton("Политика конфиденциальности", onPrivacy, Modifier.fillMaxWidth().testTag("settings-privacy"))
             }
         },
         confirmButton = { ActionButton("Готово", onDismiss, selected = true) },
