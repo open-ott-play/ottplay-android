@@ -49,7 +49,7 @@ object PlaybackItems {
         mimeType: String? = null,
         unsupportedReason: String? = null,
     ): MediaItem {
-        require(unsupportedReason == null) { "Настройка DRM или формата этой записи не поддерживается" }
+        require(unsupportedReason == null) { "This entry uses an unsupported DRM or media configuration" }
         require(id.isNotBlank()) { "A catalogue item id is required" }
         val uri = RequestPolicy.requireStreamUrl(url).toUri()
         val validatedDrm = drm?.let(DrmPolicy::validated)
@@ -81,33 +81,33 @@ object PlaybackItems {
         require(type == C.CONTENT_TYPE_DASH ||
             (config.scheme != DrmScheme.CLEARKEY && type == C.CONTENT_TYPE_HLS) ||
             (config.scheme == DrmScheme.PLAYREADY && type == C.CONTENT_TYPE_SS)) {
-            "Этот контейнер не поддерживается для выбранной системы DRM"
+            "This container is unsupported for the selected DRM system"
         }
         require(config.scheme != DrmScheme.PLAYREADY ||
             context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
             context.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEVISION)) {
-            "PlayReady поддерживается только на совместимых Android TV"
+            "PlayReady is supported only on compatible Android TV devices"
         }
         val supported = try { FrameworkMediaDrm.isCryptoSchemeSupported(uuid(config.scheme)) } catch (_: Exception) { false }
-        require(supported) { "Устройство не поддерживает выбранную систему DRM" }
+        require(supported) { "The device does not support the selected DRM system" }
     }
 
     internal fun drm(item: MediaItem): DrmConfig? {
         val extras = item.requestMetadata.extras
         if (extras?.containsKey(EXTRA_DRM) != true) {
-            require(item.localConfiguration?.drmConfiguration == null) { "Отсутствует полная конфигурация DRM запроса" }
+            require(item.localConfiguration?.drmConfiguration == null) { "Complete DRM request configuration is missing" }
             return null
         }
-        val bundle = requireNotNull(extras.getBundle(EXTRA_DRM)) { "Некорректная конфигурация DRM запроса" }
+        val bundle = requireNotNull(extras.getBundle(EXTRA_DRM)) { "Invalid DRM request configuration" }
         require(bundle.keySet() == setOf("scheme", "license_url", "headers", "multi_session")) {
-            "Некорректная конфигурация DRM запроса"
+            "Invalid DRM request configuration"
         }
         val scheme = DrmScheme.entries.firstOrNull { it.name == bundle.getString("scheme") }
-        requireNotNull(scheme) { "Указанная система DRM не поддерживается" }
-        val headers = requireNotNull(bundle.getBundle("headers")) { "Некорректные заголовки лицензии DRM" }
+        requireNotNull(scheme) { "The selected DRM system is unsupported" }
+        val headers = requireNotNull(bundle.getBundle("headers")) { "Invalid DRM license headers" }
         return DrmPolicy.validated(DrmConfig(scheme,
-            requireNotNull(bundle.getString("license_url")) { "Отсутствует адрес лицензии DRM" },
-            headers.keySet().associateWith { requireNotNull(headers.getString(it)) { "Некорректный заголовок лицензии DRM" } },
+            requireNotNull(bundle.getString("license_url")) { "DRM license address is missing" },
+            headers.keySet().associateWith { requireNotNull(headers.getString(it)) { "Invalid DRM license header" } },
             bundle.getBoolean("multi_session"),
         ))
     }
@@ -174,7 +174,7 @@ object PlaybackItems {
 
     private fun validatedMimeType(value: String?): String? {
         require(value == null || (value.length <= 128 && value.matches(Regex("[A-Za-z0-9.+_-]+/[A-Za-z0-9.+_-]+")))) {
-            "Некорректный тип медиапотока"
+            "Invalid media MIME type"
         }
         return value
     }

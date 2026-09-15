@@ -13,7 +13,7 @@ import android.os.Looper
 import android.provider.OpenableColumns
 import android.util.Rational
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -28,11 +28,12 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import play.ott.nativeapp.playback.PlaybackService
+import play.ott.nativeapp.i18n.AppLanguages
 import play.ott.nativeapp.ui.AppAction
 import play.ott.nativeapp.ui.OttNativeApp
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-open class MainActivity : ComponentActivity() {
+open class MainActivity : AppCompatActivity() {
     private val model: PlayerViewModel by viewModels()
     private var controller by mutableStateOf<MediaController?>(null)
     private var pip by mutableStateOf(false)
@@ -53,7 +54,7 @@ open class MainActivity : ComponentActivity() {
             try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { }
             val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                 if (it.moveToFirst()) it.getString(0) else null
-            } ?: "Локальный плейлист"
+            } ?: getString(R.string.local_playlist)
             model.importPlaylist(uri, name)
         }
     }
@@ -62,6 +63,8 @@ open class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLanguages.onActivityCreated()
+        model.onLocaleChanged()
         setContent {
             val state by model.state.collectAsStateWithLifecycle()
             OttNativeApp(

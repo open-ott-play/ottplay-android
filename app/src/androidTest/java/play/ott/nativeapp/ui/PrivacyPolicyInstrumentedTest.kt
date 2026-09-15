@@ -26,6 +26,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import play.ott.nativeapp.R
 import play.ott.nativeapp.core.SourceConfig
 import play.ott.nativeapp.core.SourceKind
 
@@ -33,15 +34,16 @@ import play.ott.nativeapp.core.SourceKind
 @RunWith(AndroidJUnit4::class)
 class PrivacyPolicyInstrumentedTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    private fun text(id: Int) = compose.activity.getString(id)
 
     @Test fun welcomePolicyIsAvailableBeforeSetupAndBackReturnsWithoutActions() {
         val actions = mutableListOf<AppAction>()
         compose.setContent { OttNativeApp(AppUiState(), { actions += it }, null, {}, {}) }
         compose.onNodeWithTag("welcome-privacy").performScrollTo().activate()
         compose.onNodeWithTag("privacy-policy").assertIsDisplayed()
-        compose.onNodeWithText("Разработчик и обратная связь").assertIsDisplayed()
-        compose.onNodeWithText("Удаление данных").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Android и ваши обращения").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.dialog_privacy_publisher_title)).assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.dialog_privacy_delete_title)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.dialog_privacy_android_title)).performScrollTo().assertIsDisplayed()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
         compose.onNodeWithTag("privacy-policy").assertDoesNotExist()
@@ -58,8 +60,8 @@ class PrivacyPolicyInstrumentedTest {
                 OttNativeApp(AppUiState(sources = listOf(source), selectedSourceId = source.id), { actions += it }, null, {}, {})
             }
         }
-        compose.onNodeWithText("Настройки").activate()
-        assertEquals(0, compose.onAllNodesWithText("Фоновое воспроизведение").fetchSemanticsNodes().size)
+        compose.onNodeWithText(text(R.string.library_settings)).activate()
+        assertEquals(0, compose.onAllNodesWithText(text(R.string.library_background_playback)).fetchSemanticsNodes().size)
         compose.onNodeWithTag("settings-privacy").performScrollTo().activate()
         val reader = compose.onNodeWithTag("privacy-policy-text")
         reader.assertIsFocused()
@@ -84,9 +86,9 @@ class PrivacyPolicyInstrumentedTest {
                 OttNativeApp(AppUiState(), {}, null, {}, {})
             }
         }
-        val settings = compose.onAllNodesWithText("Ещё").fetchSemanticsNodes()
-        compose.onNodeWithText(if (settings.isNotEmpty()) "Ещё" else "Настройки").activate()
-        compose.onNodeWithText("Фоновое воспроизведение").assertIsDisplayed()
+        val settings = compose.onAllNodesWithText(text(R.string.dialog_more)).fetchSemanticsNodes()
+        compose.onNodeWithText(if (settings.isNotEmpty()) text(R.string.dialog_more) else text(R.string.library_settings)).activate()
+        compose.onNodeWithText(text(R.string.library_background_playback)).assertIsDisplayed()
     }
 
     private fun configurationFor(type: Int): Configuration =

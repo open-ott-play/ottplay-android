@@ -21,6 +21,9 @@ data class SourceConfig(
     val epgUrl: String = "",
     val headers: Map<String, String> = emptyMap(),
     val catchupDaysFallback: Double = 0.0,
+    val nameMessage: CoreMessage? = null,
+    /** Explicit edits must not be mistaken for a historical generated demo label. */
+    val nameIsUserDefined: Boolean = false,
 ) {
     override fun toString(): String = "SourceConfig(id=$id, kind=$kind)"
 }
@@ -54,6 +57,8 @@ data class MediaEntry(
     val playbackUnsupportedReason: String? = null,
     /** Lowercase header names mapped to allowed origins; null identifies a legacy snapshot. */
     val headerOrigins: Map<String, String>? = null,
+    val nameMessage: CoreMessage? = null,
+    val groupMessage: CoreMessage? = null,
 ) {
     override fun toString(): String = "MediaEntry(id=$id, sourceId=$sourceId, kind=$kind)"
 }
@@ -65,6 +70,7 @@ data class Catalog(
     val entries: List<MediaEntry>,
     val epgUrls: List<String> = emptyList(),
     val notes: List<String> = emptyList(),
+    val messages: List<CoreMessage> = emptyList(),
 )
 
 @Serializable

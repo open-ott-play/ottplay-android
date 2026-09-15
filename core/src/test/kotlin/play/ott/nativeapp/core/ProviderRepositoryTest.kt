@@ -124,8 +124,8 @@ class ProviderRepositoryTest {
             assertEquals("Legacy live", catalog.entries.single().name)
             assertEquals("Legacy category", catalog.entries.single().group)
             assertEquals(2, catalog.notes.size)
-            assertTrue(catalog.notes.any { it.contains("404") && it.contains("Фильмы") })
-            assertTrue(catalog.notes.any { it.contains("501") && it.contains("Сериалы") })
+            assertTrue(catalog.messages.any { it.key == CoreMessageKey.XTREAM_SECTION_UNAVAILABLE && it.args == listOf("MOVIE", "404") })
+            assertTrue(catalog.messages.any { it.key == CoreMessageKey.XTREAM_SECTION_UNAVAILABLE && it.args == listOf("SERIES", "501") })
             assertEquals(listOf(null, "get_vod_streams", "get_series"), actions)
         }
     }
@@ -145,7 +145,7 @@ class ProviderRepositoryTest {
             val config = SourceConfig("missing", "Missing", SourceKind.XTREAM, server.url("/").toString(), "u", "p")
             val catalog = ProviderRepository().load(config)
             assertEquals("One", catalog.entries.single().name)
-            assertTrue(catalog.notes.any { it.contains("группы") && it.contains("405") })
+            assertTrue(catalog.messages.any { it.key == CoreMessageKey.XTREAM_GROUPS_UNAVAILABLE && it.args.last() == "405" })
         }
         for (code in listOf(401, 403, 500)) MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("""{"live_streams":[{"stream_id":1,"name":"One"}],"categories":[]}"""))

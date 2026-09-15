@@ -48,6 +48,14 @@ python3 scripts/configure-upload-signing.py \
 
 Omit `--create-new` to validate and reuse an existing pair. Omit `--repository` for local validation only. The script refuses to replace any existing release secret and never prints passwords or key material. Keep protected off-device backups. Creating/configuring an upload key does not enroll Play App Signing or submit an app.
 
+## Languages and reviewer captures
+
+The current source includes all 20 OTT-play FOSS interface languages, follows Android language preferences and falls back to English. The manual picker is under **More / Settings → Language**; **System default** clears the app override. AAB language splitting is disabled so a user can switch to any supported language offline after installation.
+
+Run `python3 scripts/validate-localization.py` to check resource completeness, format arguments and picker/locale agreement. If the FOSS checkout is available, add `--foss-root /path/to/ottplay-foss` to compare its language list. This structural check does not establish translation quality or device behavior.
+
+Before recording reviewer steps or screenshots, select the intended app language explicitly and record it with the candidate's commit and artifact hash. The English walkthrough in [PLAY-CONSOLE-SUBMISSION.md](PLAY-CONSOLE-SUBMISSION.md) uses the current resource labels. Compose instrumentation should use the stable tags `open-settings`, `settings-language`, `language-list` and `language-<tag>` (including `language-system` and `language-he`) rather than Russian or English display text. Existing recordings and validation reports keep their original build and language provenance; they do not validate the new language picker.
+
 ## Local builds
 
 Use JDK 17, Android SDK platform 36 and build-tools 36.0.0. The Wrapper pins Gradle and verifies the distribution SHA-256.

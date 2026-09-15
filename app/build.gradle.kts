@@ -67,7 +67,11 @@ android {
             manifestPlaceholders["allowCleartextTraffic"] = "true"
         }
     }
+    // AAPT uses the legacy iw resource code; Android locale APIs use canonical he.
+    androidResources { localeFilters += listOf("en", "hy", "be", "bg", "fr", "de", "el", "iw", "hu", "it", "lv", "lt", "pl", "pt", "ro", "ru", "es", "tr", "uk", "uz") }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    // The in-app picker must work offline after a Play installation in either language.
+    bundle { language { enableSplit = false } }
     testOptions { unitTests.isIncludeAndroidResources = true; animationsDisabled = true }
 }
 tasks.matching { it.name == "prePreviewBuild" }.configureEach {
@@ -79,6 +83,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.05.00"))
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.05.00"))
     implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")

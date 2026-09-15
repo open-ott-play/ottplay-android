@@ -44,6 +44,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -v
       - name: Validate Play listing assets
         run: python3 scripts/validate-store-assets.py --require-screenshots
+      - name: Validate all app translations
+        run: python3 scripts/validate-localization.py
       - name: Test, lint and assemble
         run: ./gradlew --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:assembleFull :app:assembleDebugAndroidTest
       - name: Upload debug APK and unsigned release APK/AAB

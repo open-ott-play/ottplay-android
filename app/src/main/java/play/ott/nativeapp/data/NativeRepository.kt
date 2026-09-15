@@ -10,17 +10,51 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import play.ott.nativeapp.R
+import play.ott.nativeapp.i18n.AppLanguages
 import play.ott.nativeapp.AppTransportPolicy
 import play.ott.nativeapp.core.*
 import java.util.UUID
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-data class ImportResult(val count: Int, val notes: List<String> = emptyList())
+data class ImportResult(val count: Int, val notes: List<String> = emptyList(), val messages: List<CoreMessage> = emptyList())
 
 class NativeRepository(
     private val context: Context,
     private val transportPolicy: RemoteTransportPolicy = AppTransportPolicy.current,
 ) {
+    private fun message(id: Int, vararg args: Any) = AppLanguages.localizedContext(context).getString(id, *args)
+
+    fun displaySource(source: SourceConfig): SourceConfig =
+        if (source.nameIsUserDefined) source
+        else if (source.nameMessage != null) {
+            val generated = requireNotNull(source.nameMessage)
+            if (generated.isValidSourceName()) source.copy(name = generated.localized(context, source.name)) else source
+        }
+        else if (source.id == "local-demo" && source.url == DEMO_URL && source.name in setOf("Offline demo", "Тест без интернета"))
+            source.copy(name = message(R.string.message_demo_source), nameMessage = CoreMessage(CoreMessageKey.DEMO_SOURCE)) else source
+
+    fun displayEntry(entry: MediaEntry): MediaEntry =
+        if (entry.id == entry.sourceId + ":pattern" && entry.url == "android.resource://" + context.packageName + "/" + R.raw.demo)
+            entry.copy(name = message(R.string.message_demo_name), group = message(R.string.message_demo_group),
+                description = message(R.string.message_demo_description))
+        else if (entry.nameMessage != null || entry.groupMessage != null) entry.copy(
+            name = entry.nameMessage?.localized(context, entry.name) ?: entry.name,
+            group = entry.groupMessage?.localized(context, entry.group) ?: entry.group)
+        else entry
+
+    fun catalogNotes(catalog: Catalog): List<String> =
+        displayNotes(catalog.notes, catalog.messages)
+
+    fun importNotes(result: ImportResult): List<String> =
+        displayNotes(result.notes, result.messages)
+
+    private fun displayNotes(notes: List<String>, messages: List<CoreMessage>): List<String> = when {
+        messages.isEmpty() -> notes
+        // Older or edited snapshots retain their original notes when metadata is unusable.
+        messages.any { !it.hasValidArguments() } && notes.isNotEmpty() -> notes
+        else -> messages.map { it.localized(context) }
+    }
+
     private val vault = SourceVault(context)
     private val db = CatalogDatabase(context, vault)
     private val sourceMutex = Mutex()
@@ -32,18 +66,26 @@ class NativeRepository(
     suspend fun sources(): List<SourceConfig> = withContext(Dispatchers.IO) { sourceMutex.withLock { vault.read() } }
 
     suspend fun save(source: SourceConfig) = withContext(Dispatchers.IO) {
-        validateSource(source)
+        require(source.nameMessage?.isValidSourceName() != false) { "Invalid generated source name metadata" }
+        // A user rename retires the generated label; their text must never be translated.
+        val generatedName = source.nameMessage?.takeIf {
+            !source.nameIsUserDefined && (source.name == it.english() || source.name == it.localized(context))
+        }
+        val saved = source.copy(name = generatedName?.english() ?: source.name, nameMessage = generatedName,
+            nameIsUserDefined = source.nameIsUserDefined || (source.nameMessage != null && generatedName == null))
+        validateSource(saved)
         refreshMutex.withLock { sourceMutex.withLock {
             val sources = vault.read()
             val previous = sources.firstOrNull { it.id == source.id }
-            if (previous != null && previous != source) db.delete(source.id)
-            vault.write(sources.filterNot { it.id == source.id } + source)
+            if (previous != null && previous != saved) db.delete(source.id)
+            vault.write(sources.filterNot { it.id == source.id } + saved)
         }}
     }
 
     private fun validateSource(source: SourceConfig) {
-        require(source.id.isNotBlank() && source.name.isNotBlank()) { "Укажите название источника" }
-        require(source.id.length <= 160 && source.name.length <= 200) { "Слишком длинное название" }
+        require(source.nameMessage?.isValidSourceName() != false) { "Invalid generated source name metadata" }
+        require(source.id.isNotBlank() && source.name.isNotBlank()) { message(R.string.message_source_name_required) }
+        require(source.id.length <= 160 && source.name.length <= 200) { message(R.string.message_source_name_too_long) }
         require(source.catchupDaysFallback.isFinite() && source.catchupDaysFallback in 0.0..3650.0) { "Invalid archive duration" }
         val scheme = source.url.toUri().scheme
         require(scheme in setOf("http", "https", "content") || source.url == DEMO_URL) { "Unsupported source address" }
@@ -72,24 +114,24 @@ class NativeRepository(
         refreshMutex.withLock {
             val catalog = when {
                 source.url == DEMO_URL -> Catalog(listOf(MediaEntry(
-                    id = source.id + ":pattern", sourceId = source.id, name = "Тест изображения · 8 секунд",
+                    id = source.id + ":pattern", sourceId = source.id, name = "Test pattern · 8 seconds",
                     url = "android.resource://" + context.packageName + "/" + R.raw.demo,
-                    kind = MediaKind.MOVIE, group = "Локальный тест",
-                    description = "Синтетический тестовый ролик. Работает без сети; звук — тишина."
+                    kind = MediaKind.MOVIE, group = "Local test",
+                    description = "A synthetic test video. Works offline; the audio track is silent."
                 )))
                 source.url.startsWith("content://") -> {
                     val text = context.contentResolver.openInputStream(source.url.toUri())?.use {
                         val bytes = readBounded(it, 32 * 1024 * 1024)
-                        require(bytes.size <= 32 * 1024 * 1024) { "Плейлист слишком большой" }
+                        require(bytes.size <= 32 * 1024 * 1024) { message(R.string.message_playlist_too_large) }
                         bytes.toString(Charsets.UTF_8)
-                    } ?: error("Файл недоступен. Выберите его снова.")
+                    } ?: error(message(R.string.message_file_reselect))
                     M3uParser.parse(text, source)
                 }
                 else -> providers.load(source)
             }
             // Editing/removing a source while a refresh is in flight must not resurrect stale data.
             val current = sourceMutex.withLock { vault.read().firstOrNull { it.id == source.id } }
-            if (current != source) error("Источник изменён. Повторите обновление.")
+            if (current != source) error(message(R.string.message_source_changed))
             db.replace(source.id, catalog)
             catalog
         }
@@ -114,26 +156,26 @@ class NativeRepository(
     ))
 
     suspend fun importSettings(text: String): ImportResult {
-        require(text.length < 4 * 1024 * 1024) { "Файл настроек слишком большой" }
+        require(text.length < 4 * 1024 * 1024) { message(R.string.message_settings_too_large) }
         val document = json.parseToJsonElement(text)
-        val legacy = if (document is kotlinx.serialization.json.JsonObject && "sources" !in document) LegacySourceImporter.parse(text) else null
+        val legacy = if (document is kotlinx.serialization.json.JsonObject && "sources" !in document) LegacySourceImporter.parse(text, CoreTextResolver { it.localized(context) }) else null
         val backup = if (legacy != null) SettingsBackup(sources = legacy.sources) else json.decodeFromString<SettingsBackup>(text)
-        require(backup.version == 1) { "Неизвестная версия настроек" }
-        require(backup.sources.size <= 100) { "Слишком много источников" }
-        require(backup.sources.map { it.id }.distinct().size == backup.sources.size) { "Повторяются идентификаторы источников" }
+        require(backup.version == 1) { message(R.string.message_settings_version_unknown) }
+        require(backup.sources.size <= 100) { message(R.string.message_too_many_sources) }
+        require(backup.sources.map { it.id }.distinct().size == backup.sources.size) { message(R.string.message_duplicate_source_ids) }
         backup.sources.forEach(::validateSource)
         if (legacy == null) validateBackupPreferences(backup.preferences)
         // A persisted SAF permission belongs to one installation. Skip only these valid sources;
         // a mixed backup must still restore its network accounts and playback positions.
         val fileSources = backup.sources.filter { it.url.toUri().scheme == "content" }
         val importedSources = backup.sources - fileSources.toSet()
-        val notes = legacy?.notes.orEmpty() + fileSources.map {
-            "Локальный плейлист «${it.name}» нужно выбрать заново через системный диалог."
+        val messages = legacy?.messages.orEmpty() + fileSources.map {
+            CoreMessage(CoreMessageKey.LOCAL_PLAYLIST_RESELECT, listOf(it.name))
         }
         // Validate the complete import before writing any credentials.
         val sourceIds = withContext(Dispatchers.IO) { refreshMutex.withLock { sourceMutex.withLock {
             val merged = vault.read().associateBy { it.id }.toMutableMap()
-            require((merged.keys + importedSources.map { it.id }).size <= 100) { "Слишком много источников" }
+            require((merged.keys + importedSources.map { it.id }).size <= 100) { message(R.string.message_too_many_sources) }
             importedSources.forEach { source ->
                 if (merged[source.id] != source) db.delete(source.id)
                 merged[source.id] = source
@@ -142,12 +184,12 @@ class NativeRepository(
             merged.keys.toSet()
         }}}
         if (legacy == null) preferences.update { old -> mergeBackupPreferences(old, backup.preferences, sourceIds) }
-        return ImportResult(importedSources.size, notes)
+        return ImportResult(importedSources.size, messages.map { it.localized(context) }, messages)
     }
 
     companion object {
         const val DEMO_URL = "demo://local"
-        fun demoSource() = SourceConfig("local-demo", "Тест без интернета", SourceKind.M3U, DEMO_URL)
+        fun demoSource() = SourceConfig("local-demo", "Offline demo", SourceKind.M3U, DEMO_URL, nameMessage = CoreMessage(CoreMessageKey.DEMO_SOURCE))
         fun fileSource(uri: String, name: String) = SourceConfig(UUID.randomUUID().toString(), name, SourceKind.M3U, uri)
     }
 }

@@ -25,14 +25,18 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.printToString
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
+import com.google.common.util.concurrent.ListenableFuture
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
@@ -51,6 +55,8 @@ import play.ott.nativeapp.OttplayApplication
 import play.ott.nativeapp.TvActivity
 import play.ott.nativeapp.data.NativeRepository
 import play.ott.nativeapp.data.UserPreferences
+import play.ott.nativeapp.i18n.AppLanguages
+import play.ott.nativeapp.playback.PlaybackService
 import play.ott.nativeapp.playback.PlaybackTestLifecycle
 
 /** Real Activity, persisted catalogue, ViewModel, service and decoder; no replacement UI/controller. */
@@ -204,6 +210,135 @@ class RealActivityPlaybackInstrumentedTest {
             awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
             key(KeyEvent.KEYCODE_DPAD_CENTER)
             awaitPlayback("TV playback must resume when the user presses Play") { it.isPlaying }
+        }
+    }
+
+    @Test fun changingAppLanguageRecreatesActivityWithoutPausingOrLosingPlayback() {
+        // A phone with background playback disabled must still survive recreation;
+        // the existing Home test deliberately enables background playback instead.
+        runBlocking { repository.preferences.update { it.copy(backgroundPlayback = false) } }
+        launchAndPlayDemo()
+        val original = requireNotNull(activity)
+        var previousTag = ""
+        var previousLanguage = ""
+        var targetTag = ""
+        onMain {
+            previousTag = AppLanguages.currentTag()
+            previousLanguage = original.resources.configuration.locales[0].language
+            targetTag = if (previousLanguage == "en") "ru" else "en"
+        }
+
+        // The Activity releases its controller during recreation. A separate connection
+        // observes the same service across that handoff, including transient pauses.
+        var connection: ListenableFuture<MediaController>? = null
+        var observer: MediaController? = null
+        var playerListener: Player.Listener? = null
+        var observing = false
+        val interruptions = mutableListOf<String>() // All accesses are on the main looper.
+        fun recordInterruption(description: String) {
+            interruptions += description
+            Log.w("OttPlaybackUiTest", "language recreation interruption: $description")
+        }
+        var originalFailure: Throwable? = null
+        try {
+            onMain {
+                connection = MediaController.Builder(context.applicationContext,
+                    SessionToken(context, ComponentName(context, PlaybackService::class.java)))
+                    .setListener(object : MediaController.Listener {
+                        override fun onDisconnected(controller: MediaController) {
+                            if (observing) recordInterruption("service controller disconnected")
+                        }
+                    }).buildAsync()
+            }
+            val player = requireNotNull(connection).get(10, TimeUnit.SECONDS)
+            observer = player
+            awaitPlaybackWithoutSurface("Independent controller must observe the playing demo", player) {
+                player.isConnected && it.isPlaying && it.currentMediaItem?.mediaId == entryId
+            }
+            // Rewind the eight-second fixture before changing configuration. Do not
+            // issue Play or replace its item after the switch: that would hide a pause.
+            onMain { player.seekTo(0) }
+            awaitPlaybackWithoutSurface("Rewound demo must be playing before the language switch", player) {
+                it.isPlaying && it.currentPosition in 100L..2_000L && it.currentMediaItem?.mediaId == entryId
+            }
+            onMain {
+                playerListener = object : Player.Listener {
+                    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        if (!playWhenReady) recordInterruption("playWhenReady=false, reason=$reason")
+                    }
+
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        if (mediaItem?.mediaId != entryId) {
+                            recordInterruption("item=${mediaItem?.mediaId}, reason=$reason")
+                        }
+                    }
+                }.also(player::addListener)
+                observing = true
+                Log.i("OttPlaybackUiTest", "language switch $previousTag -> $targetTag; " +
+                    "item=${player.currentMediaItem?.mediaId}, position=${player.currentPosition}")
+                AppLanguages.setLanguage(targetTag)
+            }
+
+            awaitState("Language change must resume a new launcher Activity in $targetTag") {
+                var replaced = false
+                onMain {
+                    val resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                        .filterIsInstance<MainActivity>().firstOrNull { it.componentName == original.componentName }
+                    if (resumed != null) activity = resumed
+                    replaced = resumed != null && resumed !== original &&
+                        resumed.resources.configuration.locales[0].language == targetTag &&
+                        AppLanguages.currentTag() == targetTag
+                }
+                replaced
+            }
+            awaitNode("player-container")
+            val replacementView = awaitPlayerView()
+            var resumedPosition = 0L
+            onMain {
+                assertEquals("Recreation must keep the phone/TV launcher", original.javaClass, requireNotNull(activity).javaClass)
+                assertEquals("Replacement surface must retain the selected item", entryId, replacementView.player?.currentMediaItem?.mediaId)
+                resumedPosition = player.currentPosition
+            }
+            // Observe beyond the bounded visibility handoff as well, so a delayed
+            // expiry that incorrectly pauses the resumed Activity cannot pass.
+            val observeUntil = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+            awaitPlaybackWithoutSurface("Playback must continue after locale recreation and handoff expiry", player) {
+                System.nanoTime() >= observeUntil && player.isConnected && it.isPlaying &&
+                    it.currentMediaItem?.mediaId == entryId && it.currentPosition != resumedPosition
+            }
+            onMain {
+                Log.i("OttPlaybackUiTest", "language recreation complete; item=${player.currentMediaItem?.mediaId}, " +
+                    "position=${player.currentPosition}, interruptions=$interruptions")
+                assertTrue("Language recreation interrupted playback: $interruptions", interruptions.isEmpty())
+                assertTrue("Playback must remain requested", player.playWhenReady)
+            }
+        } catch (failure: Throwable) {
+            originalFailure = failure
+            throw failure
+        } finally {
+            try {
+                var changed = false
+                onMain {
+                    observing = false
+                    playerListener?.let { observer?.removeListener(it) }
+                    connection?.let(MediaController::releaseFuture)
+                    changed = AppLanguages.currentTag() != previousTag
+                    AppLanguages.setLanguage(previousTag)
+                }
+                if (changed) awaitState("The test must restore the previous app language") {
+                    var restored = false
+                    onMain {
+                        val resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                            .filterIsInstance<MainActivity>().firstOrNull { it.componentName == original.componentName }
+                        if (resumed != null) activity = resumed
+                        restored = AppLanguages.currentTag() == previousTag &&
+                            resumed?.resources?.configuration?.locales?.get(0)?.language == previousLanguage
+                    }
+                    restored
+                }
+            } catch (cleanupFailure: Throwable) {
+                if (originalFailure != null) originalFailure.addSuppressed(cleanupFailure) else throw cleanupFailure
+            }
         }
     }
 

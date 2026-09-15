@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
+import play.ott.nativeapp.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -66,6 +68,9 @@ internal fun NativePlayerPane(
     var controlsVisible by remember { mutableStateOf(false) }
     val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     val context = LocalContext.current
+    val audioTitle = stringResource(R.string.dialog_audio)
+    val subtitleTitle = stringResource(R.string.dialog_subtitles)
+    val playerDescription = stringResource(R.string.dialog_player_accessibility)
     BackHandler(enabled = isTv && controller != null && controlsVisible && !optionsOpen && trackType == null && !inPictureInPicture) {
         nativeView?.hideController()
     }
@@ -79,7 +84,7 @@ internal fun NativePlayerPane(
     DisposableEffect(trackType, controller, entry.id) {
         val type = trackType
         val dialog = if (type != null && controller != null && controller.isCommandAvailable(Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS)) {
-            TrackSelectionDialogBuilder(context, if (type == C.TRACK_TYPE_AUDIO) "Аудиодорожка" else "Субтитры", controller, type)
+            TrackSelectionDialogBuilder(context, if (type == C.TRACK_TYPE_AUDIO) audioTitle else subtitleTitle, controller, type)
                 .setShowDisableOption(type == C.TRACK_TYPE_TEXT).build().apply {
                     setOnDismissListener { trackType = null; if (isTv) nativeView?.focusPlaybackControl() }
                     show()
@@ -114,8 +119,8 @@ internal fun NativePlayerPane(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(vertical = 12.dp),
             )
-            ActionButton(if (fullscreen) "Назад" else "На весь экран", onFullscreen, compact = true)
-            ActionButton("Ещё", { optionsOpen = true }, Modifier.testTag("player-options"), compact = true)
+            ActionButton(if (fullscreen) stringResource(R.string.dialog_back) else stringResource(R.string.dialog_fullscreen), onFullscreen, compact = true)
+            ActionButton(stringResource(R.string.dialog_more), { optionsOpen = true }, Modifier.testTag("player-options"), compact = true)
         }
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             AndroidView(
@@ -139,7 +144,7 @@ internal fun NativePlayerPane(
                         setKeepContentOnPlayerReset(true)
                         isFocusable = true
                         isFocusableInTouchMode = true
-                        contentDescription = "Видеоплеер. ОК — управление, меню — дорожки и параметры."
+                        contentDescription = playerDescription
                         setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
                             controlsVisible = visibility == View.VISIBLE
                             retainPlaybackFocusAfterControlsHide(
@@ -151,6 +156,7 @@ internal fun NativePlayerPane(
                     }
                 },
                 update = { view ->
+                    view.contentDescription = playerDescription
                     if (view.player !== controller) view.player = controller
                     view.resizeMode = resizeMode
                     view.useController = !inPictureInPicture
@@ -165,9 +171,9 @@ internal fun NativePlayerPane(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Не удалось воспроизвести", style = MaterialTheme.typography.titleMedium)
-                    Text("Проверьте подключение и доступность канала. Код: $it", style = MaterialTheme.typography.bodySmall, maxLines = 3)
-                    ActionButton("Повторить", onRetry, selected = true)
+                    Text(stringResource(R.string.dialog_playback_failed), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.dialog_playback_error, it), style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                    ActionButton(stringResource(R.string.dialog_retry), onRetry, selected = true)
                 }
             }
         }

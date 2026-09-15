@@ -16,18 +16,18 @@ Username/password: **leave unused for this instruction**; there is no demo login
 
 Copy-ready reviewer notes, wherever the live Console offers an instructions field or Google requests a walkthrough:
 
-> The UI is in Russian. On first launch, choose “Попробовать демо” (Try demo), then open “Тест изображения · 8 секунд”. This is an original eight-second offline video with silent audio. No account, network, payment or OTP is needed. “Политика конфиденциальности” opens the offline privacy policy. If already configured, open “Ещё” / “Настройки” and choose “Добавить демоисточник”. Provider accounts are optional and belong to the user's chosen service.
+> The UI follows the Android language preferences, with English as its fallback. The in-app Language setting can override this and includes all 20 languages offered by OTT-play FOSS. On first launch, choose “Try the demo”, then open “Test pattern · 8 seconds”. This is an original eight-second offline video with silent audio. No account, network, payment or OTP is needed. “Privacy policy” opens the offline privacy policy. If already configured, open “More” / “Settings” and choose “Add a demo source”. Provider accounts are optional and belong to the user's chosen service. These button names are for English; choose Settings → Language → English if needed.
 
 This permits review of setup, the library, basic playback, settings and privacy. It **does not demonstrate authenticated Xtream/Stalker, remote EPG, live catch-up or protected-service DRM behavior**. These optional bring-your-own-source paths are not an unconditional account prerequisite for reviewing the player. If Google requests access to a restricted external backend, the publisher must supply valid permitted test endpoints and credentials/resources in additional instructions. Do not claim that the local demo verifies those integrations. Google requires access details where functionality is restricted; the current help page calls this area **Sign-in details**. [Prepare your app for review](https://support.google.com/googleplay/android-developer/answer/9859455?hl=en).
 
 ## Reviewer walkthrough
 
-1. Fresh install: read the welcome-screen privacy policy, close it with Back, and choose **Попробовать демо**. No permission dialog or provider login is required for this local demo.
-2. The movie library contains **Тест изображения · 8 секунд**. Select it using touch or TV D-pad/OK. The silent audio track is intentional.
-3. Show playback controls and open **Параметры плеера** to inspect scaling, speed and available tracks. A track option depends on the selected media; the demo does not contain every format or subtitle configuration.
-4. Back leaves fullscreen and exposes the current-playing bar. Stop using the player controls to end playback. Add/remove favorites and remove the demo via **Источники** to inspect local library controls.
-5. Phone: inspect PiP on a supported device and the **Фоновое воспроизведение** setting. TV: press Home during playback; playback should pause, and TV does not offer PiP or the phone background setting. Record actual results separately.
-6. **Источники → Добавить по ссылке** exposes M3U/Xtream/Stalker configuration. The Play build accepts HTTPS only. Use authorized reviewer fixtures for network and provider scenarios; no commercial content rights are supplied by the app.
+1. Fresh install: read the welcome-screen privacy policy, close it with Back, and choose **Try the demo**. No permission dialog or provider login is required for this local demo.
+2. The movie library contains **Test pattern · 8 seconds**. Select it using touch or TV D-pad/OK. The silent audio track is intentional.
+3. Show playback controls and open **Player options** to inspect scaling, speed and available tracks. A track option depends on the selected media; the demo does not contain every format or subtitle configuration.
+4. Back leaves fullscreen and exposes the current-playing bar. Stop using the player controls to end playback. Add/remove favorites and remove the demo via **Sources** to inspect local library controls.
+5. Phone: inspect PiP on a supported device and the **Background playback** setting. TV: press Home during playback; playback should pause, and TV does not offer PiP or the phone background setting. Record actual results separately.
+6. **Sources → Add by URL** exposes M3U/Xtream/Stalker configuration. The Play build accepts HTTPS only. Use authorized reviewer fixtures for network and provider scenarios; no commercial content rights are supplied by the app.
 
 ## Data safety draft
 

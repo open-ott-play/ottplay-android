@@ -1,5 +1,7 @@
 package play.ott.nativeapp.playback
 
+import play.ott.nativeapp.i18n.AppLanguages
+import play.ott.nativeapp.R
 import android.app.PendingIntent
 import android.content.res.Configuration
 import android.os.Process
@@ -109,7 +111,7 @@ class PlaybackService : MediaSessionService() {
             },
             onFailure = {
                 mediaSession?.sendError(SessionError(SessionError.ERROR_IO,
-                    "Не удалось переключить канал. Проверьте подключение и доступность источника."))
+                    AppLanguages.localizedContext(this).getString(R.string.message_service_switch_failed)))
             },
             validate = { PlaybackItems.requireSupported(this, it) },
         )

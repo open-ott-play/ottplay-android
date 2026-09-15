@@ -8,6 +8,6 @@ Try the built-in offline demo without creating an account. It plays a short, ori
 
 Your sources and credentials are stored locally with Android Keystore encryption. Settings can be exported and imported; exports contain plaintext source credentials, so keep them private. The Google Play build requires HTTPS for remote media, guides, logos and provider connections. HTTP-only providers are not supported in this build.
 
-The interface is currently in Russian. No advertisements, subscriptions or commercial channel catalog are included. You must supply sources and accounts you are authorized to use. Provider features, formats, codecs and DRM playback depend on your service and Android device; the app does not grant access to protected content.
+The interface follows your Android language preferences, with English as the fallback. Choose from 20 languages in Settings, or use the system default. All interface languages are included for offline use. No advertisements, subscriptions or commercial channel catalog are included. You must supply sources and accounts you are authorized to use. Provider features, formats, codecs and DRM playback depend on your service and Android device; the app does not grant access to protected content.
 
 Published by alvit. Support and privacy: alvit.work@gmail.com

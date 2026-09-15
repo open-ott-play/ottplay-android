@@ -8,13 +8,15 @@ import androidx.core.database.sqlite.transaction
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import play.ott.nativeapp.core.CoreMessage
+import play.ott.nativeapp.core.CoreMessageKey
 import play.ott.nativeapp.core.Catalog
 import play.ott.nativeapp.core.MediaEntry
 import play.ott.nativeapp.core.Programme
 import play.ott.nativeapp.core.needsHeaderOriginRefresh
 
 @Serializable
-private data class CatalogMetadata(val format: Int = 2, val epgUrls: List<String> = emptyList(), val notes: List<String> = emptyList())
+private data class CatalogMetadata(val format: Int = 2, val epgUrls: List<String> = emptyList(), val notes: List<String> = emptyList(), val messages: List<CoreMessage> = emptyList())
 
 /** Transactional EPG index and encrypted catalog blocks. All calls run on Dispatchers.IO. */
 class CatalogDatabase(context: Context, private val vault: SourceVault) :
@@ -58,7 +60,7 @@ class CatalogDatabase(context: Context, private val vault: SourceVault) :
             }
             db.insertWithOnConflict("catalogs", null, ContentValues().apply {
                 put("source_id", sourceId)
-                put("payload", vault.encrypt(json.encodeToString(CatalogMetadata(epgUrls = catalog.epgUrls, notes = catalog.notes)).encodeToByteArray()))
+                put("payload", vault.encrypt(json.encodeToString(CatalogMetadata(epgUrls = catalog.epgUrls, notes = catalog.notes, messages = catalog.messages)).encodeToByteArray()))
                 put("updated_ms", System.currentTimeMillis())
             }, SQLiteDatabase.CONFLICT_REPLACE)
         }
@@ -89,8 +91,9 @@ class CatalogDatabase(context: Context, private val vault: SourceVault) :
         // Refresh legacy snapshots before playback can reinterpret source credentials as CDN
         // credentials. Keep the encrypted rows intact until a successful atomic replacement.
         if (entries.any { it.needsHeaderOriginRefresh() }) return Catalog(emptyList(), notes =
-            listOf("Обновите каталог, чтобы проверить адреса передачи учётных данных."))
-        return Catalog(entries, info.epgUrls, info.notes)
+            listOf(CoreMessage(CoreMessageKey.HEADER_ORIGIN_REFRESH).english()),
+            messages = listOf(CoreMessage(CoreMessageKey.HEADER_ORIGIN_REFRESH)))
+        return Catalog(entries, info.epgUrls, info.notes, info.messages)
         } finally { db.endTransaction() }
     }
 

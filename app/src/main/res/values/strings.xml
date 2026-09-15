@@ -1,1 +1,4 @@
-<resources><string name="app_name">OTT-play Native</string></resources>
+<resources>
+    <string name="app_name" translatable="false">OTT-play Native</string>
+    <string name="local_playlist">Local playlist</string>
+</resources>

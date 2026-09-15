@@ -14,24 +14,23 @@ internal class XtreamProvider(private val http: ProviderHttp) {
         if (status.isNotBlank() && !status.equals("active", true)) throw ProviderException("Xtream account is not active")
         val serverZone = (auth["server_info"] as? JsonObject)?.string("timezone").orEmpty().ifBlank { "UTC" }
         val entries = mutableListOf<MediaEntry>()
-        val notes = mutableListOf<String>()
+        val messages = mutableListOf<CoreMessage>()
         listOf(Triple("live", "get_live_streams", MediaKind.LIVE), Triple("vod", "get_vod_streams", MediaKind.MOVIE),
             Triple("series", "get_series", MediaKind.SERIES)).forEach { (type, action, kind) ->
-            val label = when (kind) { MediaKind.LIVE -> "ТВ"; MediaKind.MOVIE -> "Фильмы"; else -> "Сериалы" }
             // The legacy FOSS provider consumed live_streams/categories directly from player_api.php.
             // Prefer that complete result when present; standard Xtream servers expose action endpoints.
             val embeddedLive = if (kind == MediaKind.LIVE) auth["live_streams"] as? JsonArray else null
             val streams = embeddedLive ?: try { requireArray(api(config, action), "Xtream catalogue") }
             catch (error: ProviderException) {
                 if (kind == MediaKind.LIVE || error.statusCode !in UNSUPPORTED) throw error
-                notes += "$label: сервер не поддерживает этот раздел (HTTP ${error.statusCode}). Остальные разделы загружены."
+                messages += CoreMessage(CoreMessageKey.XTREAM_SECTION_UNAVAILABLE, listOf(kind.name, error.statusCode.toString()))
                 return@forEach
             }
             val categoryResponse = if (embeddedLive != null) (auth["categories"] as? JsonArray ?: JsonArray(emptyList()))
                 else try { requireArray(api(config, "get_${type}_categories"), "Xtream categories") }
                 catch (error: ProviderException) {
                     if (error.statusCode !in UNSUPPORTED) throw error
-                    notes += "$label: сервер не предоставляет группы (HTTP ${error.statusCode}); записи доступны без групп провайдера."
+                    messages += CoreMessage(CoreMessageKey.XTREAM_GROUPS_UNAVAILABLE, listOf(kind.name, error.statusCode.toString()))
                     JsonArray(emptyList())
                 }
             val categories = categoryResponse.objects().associate { it.string("category_id") to it.string("category_name") }
@@ -54,12 +53,14 @@ internal class XtreamProvider(private val http: ProviderHttp) {
                     group = categories[item.string("category_id")].orEmpty().ifBlank { "Other" },
                     logo = resolveHttp(config.url, item.string("stream_icon").ifBlank { item.string("cover") }), epgId = epgId,
                     headers = config.headers, catchup = catchup, description = item.string("plot"), providerId = id,
-                    headerOrigins = headerOrigins(config.headers, config.url))
+                    headerOrigins = headerOrigins(config.headers, config.url),
+                    nameMessage = if (item.string("name").isBlank()) CoreMessage(CoreMessageKey.UNTITLED, listOf(type)) else null,
+                    groupMessage = if (categories[item.string("category_id")].isNullOrBlank()) CoreMessage(CoreMessageKey.OTHER_GROUP) else null)
                 if (entries.size > 100_000) throw ProviderException("Xtream catalogue contains more than 100,000 entries")
             }
         }
         val epg = if (config.epgUrl.isNotBlank()) httpUrl(config.epgUrl).toString() else apiUrl(config, "xmltv.php").toString()
-        return Catalog(entries.distinctBy { it.id }, listOf(epg), notes)
+        return Catalog(entries.distinctBy { it.id }, listOf(epg), messages.map { it.english() }, messages)
     }
 
     suspend fun episodes(config: SourceConfig, series: MediaEntry): List<MediaEntry> {
@@ -87,6 +88,7 @@ internal class XtreamProvider(private val http: ProviderHttp) {
                 logo = resolveHttp(config.url, info?.string("movie_image").orEmpty()).ifBlank { series.logo },
                 headers = config.headers, description = info?.string("plot").orEmpty(),
                 headerOrigins = headerOrigins(config.headers, config.url),
+                nameMessage = if (item.string("title").isBlank()) CoreMessage(CoreMessageKey.EPISODE, listOf(item.string("episode_num").ifBlank { id })) else null,
                 season = item.int("season") ?: season.toIntOrNull(), episode = item.int("episode_num"), providerId = id,
             )
             if (result.size > 100_000) throw ProviderException("Series contains too many episodes")
