@@ -411,6 +411,12 @@ class RealActivityPlaybackInstrumentedTest {
             // Crucially no RequestFocus or touch injection: launch must create usable remote focus.
             awaitFocused("library-tab-MOVIES")
             key(KeyEvent.KEYCODE_DPAD_RIGHT)
+            // The rail scrolls the lazy target into composition and waits a frame before
+            // assigning focus. Observe that real transition without injecting focus.
+            val focusStarted = System.nanoTime()
+            awaitFocused("catalog-item-$entryId")
+            Log.i("OttPlaybackUiTest", "D-pad catalogue focus settled after " +
+                "${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - focusStarted)} ms")
             compose.onNodeWithTag("catalog-item-$entryId").assertIsFocused()
             key(KeyEvent.KEYCODE_DPAD_CENTER)
         } else compose.onNodeWithTag("catalog-item-$entryId").performClick()
