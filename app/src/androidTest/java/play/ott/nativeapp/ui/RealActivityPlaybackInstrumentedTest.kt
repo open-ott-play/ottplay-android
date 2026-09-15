@@ -67,7 +67,10 @@ class RealActivityPlaybackInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val repository get() = (context.applicationContext as OttplayApplication).repository
-    private val source = NativeRepository.demoSource().copy(id = "activity-test-${UUID.randomUUID()}", name = "Activity test")
+    private val source = NativeRepository.demoSource().copy(
+        id = "activity-test-${UUID.randomUUID()}", name = "Activity test",
+        nameMessage = null, nameIsUserDefined = true,
+    )
     private val entryId get() = "${source.id}:pattern"
     private val isTv get() = context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     private var activity: MainActivity? = null
