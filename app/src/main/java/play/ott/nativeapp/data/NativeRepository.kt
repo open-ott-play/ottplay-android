@@ -34,7 +34,7 @@ class NativeRepository(
             source.copy(name = message(R.string.message_demo_source), nameMessage = CoreMessage(CoreMessageKey.DEMO_SOURCE)) else source
 
     fun displayEntry(entry: MediaEntry): MediaEntry =
-        if (entry.id == entry.sourceId + ":pattern" && entry.url == "android.resource://" + context.packageName + "/" + R.raw.demo)
+        if (isBundledDemoEntry(entry, entry.sourceId) && entry.url == bundledDemoUrl)
             entry.copy(name = message(R.string.message_demo_name), group = message(R.string.message_demo_group),
                 description = message(R.string.message_demo_description))
         else if (entry.nameMessage != null || entry.groupMessage != null) entry.copy(
@@ -108,17 +108,45 @@ class NativeRepository(
         }
     }
 
-    suspend fun cached(id: String): Catalog = withContext(Dispatchers.IO) { db.read(id) }
+    // Keep the R reference visible to release resource shrinking, while persisting its stable name.
+    private val bundledDemoUrl: String
+        get() = "android.resource://" + context.packageName + "/raw/" + context.resources.getResourceEntryName(R.raw.demo)
+
+    private fun isBundledDemoEntry(entry: MediaEntry, sourceId: String): Boolean {
+        if (entry.sourceId != sourceId || entry.id != "$sourceId:pattern" || entry.kind != MediaKind.MOVIE) return false
+        val uri = entry.url.toUri()
+        if (uri.scheme != "android.resource" || uri.authority != context.packageName || uri.query != null || uri.fragment != null) return false
+        val path = uri.pathSegments
+        // Older releases persisted numeric resource IDs, which change between APKs.
+        return path == listOf("raw", "demo") || (path.size == 1 && path[0].toIntOrNull()?.ushr(24) == 0x7f)
+    }
+
+    private fun bundledDemoEntry(sourceId: String) = MediaEntry(
+        id = "$sourceId:pattern", sourceId = sourceId, name = "Test pattern · 8 seconds",
+        url = bundledDemoUrl, kind = MediaKind.MOVIE, group = "Local test",
+        description = "A synthetic test video. Works offline; the audio track is silent."
+    )
+
+    suspend fun cached(id: String): Catalog = withContext(Dispatchers.IO) {
+        val cached = db.read(id)
+        if (cached.entries.none { isBundledDemoEntry(it, id) && it.url != bundledDemoUrl }) return@withContext cached
+        refreshMutex.withLock {
+            val source = sourceMutex.withLock { vault.read().firstOrNull { it.id == id } }
+            // Re-read under the refresh lock so source edits or refreshes cannot be overwritten.
+            val current = db.read(id)
+            if (source?.kind != SourceKind.M3U || source.url != DEMO_URL) return@withLock current
+            val restored = current.copy(entries = current.entries.map { entry ->
+                if (isBundledDemoEntry(entry, id) && entry.url != bundledDemoUrl) bundledDemoEntry(id) else entry
+            })
+            if (restored != current) db.replace(id, restored)
+            restored
+        }
+    }
 
     suspend fun refresh(source: SourceConfig): Catalog = withContext(Dispatchers.IO) {
         refreshMutex.withLock {
             val catalog = when {
-                source.url == DEMO_URL -> Catalog(listOf(MediaEntry(
-                    id = source.id + ":pattern", sourceId = source.id, name = "Test pattern · 8 seconds",
-                    url = "android.resource://" + context.packageName + "/" + R.raw.demo,
-                    kind = MediaKind.MOVIE, group = "Local test",
-                    description = "A synthetic test video. Works offline; the audio track is silent."
-                )))
+                source.url == DEMO_URL -> Catalog(listOf(bundledDemoEntry(source.id)))
                 source.url.startsWith("content://") -> {
                     val text = context.contentResolver.openInputStream(source.url.toUri())?.use {
                         val bytes = readBounded(it, 32 * 1024 * 1024)
@@ -149,7 +177,9 @@ class NativeRepository(
     suspend fun programmes(entry: MediaEntry): List<Programme> = withContext(Dispatchers.IO) { db.programmes(entry) }
 
     suspend fun stream(source: SourceConfig, entry: MediaEntry): PlaybackStream =
-        if (source.url == DEMO_URL) PlaybackStream(entry.url) else providers.resolve(source, entry)
+        if (source.url == DEMO_URL) PlaybackStream(
+            if (source.kind == SourceKind.M3U && isBundledDemoEntry(entry, source.id)) bundledDemoUrl else entry.url
+        ) else providers.resolve(source, entry)
 
     suspend fun exportSettings(): String = json.encodeToString(SettingsBackup(
         sources = sources(), preferences = preferences.data.first()
