@@ -62,7 +62,7 @@ internal fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
-            modifier = Modifier.widthIn(max = 920.dp).fillMaxWidth(.94f).fillMaxHeight(.92f).testTag("privacy-policy"),
+            modifier = Modifier.tvRemoteInput().widthIn(max = 920.dp).fillMaxWidth(.94f).fillMaxHeight(.92f).testTag("privacy-policy"),
             shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface,
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

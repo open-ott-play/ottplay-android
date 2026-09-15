@@ -59,7 +59,7 @@ internal fun GuideDialog(entry: MediaEntry, programmes: List<Programme>, loading
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
     LaunchedEffect(entry.id, ordered) { if (ordered.isNotEmpty()) scroll.scrollToItem(initialIndex) }
     Dialog(onDismissRequest = { onAction(AppAction.CloseEpg) }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxWidth(.94f).widthIn(max = 860.dp).fillMaxHeight(.91f), shape = RoundedCornerShape(24.dp)) {
+        Surface(Modifier.tvRemoteInput().fillMaxWidth(.94f).widthIn(max = 860.dp).fillMaxHeight(.91f), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
@@ -121,7 +121,7 @@ private fun ProgrammeCard(title: String, description: String, time: String, stat
 internal fun SeriesDialog(entry: MediaEntry, episodes: List<MediaEntry>, loading: Boolean, onAction: (AppAction) -> Unit) {
     val ordered = remember(episodes) { episodes.sortedWith(compareBy({ it.season ?: 0 }, { it.episode ?: 0 }, { it.name })) }
     Dialog(onDismissRequest = { onAction(AppAction.CloseSeries) }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxWidth(.94f).widthIn(max = 860.dp).fillMaxHeight(.91f), shape = RoundedCornerShape(24.dp)) {
+        Surface(Modifier.tvRemoteInput().fillMaxWidth(.94f).widthIn(max = 860.dp).fillMaxHeight(.91f), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {

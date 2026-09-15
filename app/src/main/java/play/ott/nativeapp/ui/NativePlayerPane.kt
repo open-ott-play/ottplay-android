@@ -135,7 +135,12 @@ internal fun NativePlayerPane(
                         controllerAutoShow = true
                         controllerShowTimeoutMs = 4000
                         if (isTv) setControllerAnimationEnabled(false)
-                        setShowSubtitleButton(true)
+                        setShowSubtitleButton(!isTv)
+                        if (isTv) {
+                            // Keep all TV settings in the app's remote-aware dialog. Media3's
+                            // built-in gear/subtitle menus use a separate IME-bound PopupWindow.
+                            findViewById<View>(androidx.media3.ui.R.id.exo_settings)?.setOnClickListener { openOptions() }
+                        }
                         setShowFastForwardButton(true)
                         setShowRewindButton(true)
                         setShowPreviousButton(true)
@@ -184,6 +189,32 @@ internal fun NativePlayerPane(
 @androidx.annotation.OptIn(UnstableApi::class)
 private class RemotePlayerView(context: Context) : PlayerView(context) {
     var openOptions: () -> Unit = {}
+    private val remoteInput = TvRemoteInput()
+
+    override fun dispatchKeyEventPreIme(event: KeyEvent): Boolean =
+        remoteInput.dispatch(this, event, ::dispatchRemoteKey) || super.dispatchKeyEventPreIme(event)
+
+    private fun dispatchRemoteKey(event: KeyEvent): Boolean {
+        if (dispatchKeyEvent(event)) return true
+        if (event.action != KeyEvent.ACTION_DOWN) return false
+        val direction = when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT
+            KeyEvent.KEYCODE_DPAD_RIGHT -> View.FOCUS_RIGHT
+            KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP
+            KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
+            else -> return false
+        }
+        // ViewRoot normally performs this after an unhandled native arrow. When the
+        // hidden IME intercepts it, complete that same native focus search here.
+        val focused = findFocus() ?: return false
+        val next = focused.focusSearch(direction) ?: return false
+        return next !== focused && next.requestFocus(direction)
+    }
+
+    override fun onDetachedFromWindow() {
+        remoteInput.clear()
+        super.onDetachedFromWindow()
+    }
     private var playbackFocusPending = false
     private var controllerHidWithFocus = false
 
@@ -213,6 +244,7 @@ private class RemotePlayerView(context: Context) : PlayerView(context) {
     }
 
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        if (!hasWindowFocus) remoteInput.clear()
         super.onWindowFocusChanged(hasWindowFocus)
         if (hasWindowFocus) restorePlaybackFocusWhenReady()
     }

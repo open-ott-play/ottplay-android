@@ -61,6 +61,7 @@ internal fun SourceEditor(
     var showPassword by rememberSaveable(id) { mutableStateOf(false) }
     var validation by rememberSaveable(id) { mutableStateOf<Int?>(null) }
     AlertDialog(
+        modifier = Modifier.tvRemoteInput(),
         onDismissRequest = onDismiss,
         title = { Text(if (original == null) stringResource(R.string.dialog_source_add_title) else stringResource(R.string.dialog_source_edit_title)) },
         text = {

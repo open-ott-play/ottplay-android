@@ -65,6 +65,7 @@ internal fun PlaybackOptionsDialog(
     val supportsPip = !isTv && LocalContext.current.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
     val initialFocus = remember { FocusRequester() }
     AlertDialog(
+        modifier = Modifier.tvRemoteInput(),
         onDismissRequest = onDismiss,
         title = { Text(if (speedOptions) stringResource(R.string.dialog_speed_title) else stringResource(R.string.dialog_options_title)) },
         text = {

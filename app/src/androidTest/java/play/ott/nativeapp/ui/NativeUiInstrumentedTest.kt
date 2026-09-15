@@ -146,8 +146,14 @@ class NativeUiInstrumentedTest {
     @Test fun sourceEditorRelocalizesUntouchedGeneratedNameButPreservesExplicitRename() {
         val generatedName = CoreMessage(CoreMessageKey.DEMO_SOURCE)
         var original by mutableStateOf(source.copy(name = "Тест без интернета", nameMessage = generatedName))
+        var editorOpen by mutableStateOf(true)
         val saved = mutableListOf<SourceConfig>()
-        compose.setContent { SourceEditor(original, {}, { saved += it }) }
+        compose.setContent {
+            if (editorOpen) SourceEditor(original, { editorOpen = false }) {
+                saved += it
+                editorOpen = false
+            }
+        }
 
         // A system language change republishes the same source with a new generated label.
         compose.runOnIdle { original = original.copy(name = "Offline demo") }
@@ -158,8 +164,15 @@ class NativeUiInstrumentedTest {
             assertEquals(generatedName, saved.single().nameMessage)
             assertTrue(!saved.single().nameIsUserDefined)
         }
+        compose.onNodeWithText(text(R.string.dialog_source_edit_title)).assertDoesNotExist()
+        awaitActivityWindowReady(compose.activity)
 
         // Even a rename equal to a legacy translation is the user's text, not a generated label.
+        // Reopen the saved source as the app does; Save disposes the previous editor.
+        compose.runOnIdle {
+            original = saved.single()
+            editorOpen = true
+        }
         compose.onNodeWithText(text(R.string.dialog_source_name)).performTextReplacement("Тест без интернета")
         compose.runOnIdle { original = original.copy(name = "Démonstration hors ligne") }
         compose.onNodeWithText("Тест без интернета").assertIsDisplayed()
@@ -170,6 +183,8 @@ class NativeUiInstrumentedTest {
             assertEquals(null, saved.last().nameMessage)
             assertTrue(saved.last().nameIsUserDefined)
         }
+        compose.onNodeWithText(text(R.string.dialog_source_edit_title)).assertDoesNotExist()
+        awaitActivityWindowReady(compose.activity)
     }
 
     @Test fun televisionEntersANewTabAfterThePreviousGridWasScrolled() {

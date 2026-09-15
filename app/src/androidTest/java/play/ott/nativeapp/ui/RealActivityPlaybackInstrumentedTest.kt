@@ -213,6 +213,27 @@ class RealActivityPlaybackInstrumentedTest {
             awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
             key(KeyEvent.KEYCODE_DPAD_CENTER)
             awaitPlayback("TV playback must resume when the user presses Play") { it.isPlaying }
+            val resumedView = awaitPlayerView()
+            onMain { resumedView.controllerShowTimeoutMs = 0 }
+            key(KeyEvent.KEYCODE_DPAD_RIGHT)
+            awaitState("Right must move focus between native controls after the language/IME handoff") {
+                var moved = false
+                onMain {
+                    moved = resumedView.hasFocus() &&
+                        resumedView.findFocus()?.id != androidx.media3.ui.R.id.exo_play_pause
+                }
+                moved
+            }
+            key(KeyEvent.KEYCODE_DPAD_LEFT)
+            awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
+            onMain {
+                assertTrue("Native TV gear must open the same remote-aware Options menu",
+                    resumedView.findViewById<View>(androidx.media3.ui.R.id.exo_settings).performClick())
+            }
+            awaitNode("player-speed-options")
+            key(KeyEvent.KEYCODE_BACK)
+            awaitActivityWindowReady(requireNotNull(activity))
+            awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
         }
     }
 
@@ -321,23 +342,32 @@ class RealActivityPlaybackInstrumentedTest {
         } finally {
             try {
                 var changed = false
+                var beforeRestore: MainActivity? = null
                 onMain {
                     observing = false
                     playerListener?.let { observer?.removeListener(it) }
                     connection?.let(MediaController::releaseFuture)
                     changed = AppLanguages.currentTag() != previousTag
+                    beforeRestore = activity
                     AppLanguages.setLanguage(previousTag)
                 }
-                if (changed) awaitState("The test must restore the previous app language") {
-                    var restored = false
-                    onMain {
-                        val resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
-                            .filterIsInstance<MainActivity>().firstOrNull { it.componentName == original.componentName }
-                        if (resumed != null) activity = resumed
-                        restored = AppLanguages.currentTag() == previousTag &&
-                            resumed?.resources?.configuration?.locales?.get(0)?.language == previousLanguage
+                if (changed) {
+                    awaitState("The test must restore the previous app language in a new Activity") {
+                        var restored = false
+                        onMain {
+                            val resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                                .filterIsInstance<MainActivity>().firstOrNull { it.componentName == original.componentName }
+                            if (resumed != null) activity = resumed
+                            restored = resumed != null && resumed !== beforeRestore &&
+                                beforeRestore?.isDestroyed == true &&
+                                AppLanguages.currentTag() == previousTag &&
+                                resumed.resources.configuration.locales[0].language == previousLanguage
+                        }
+                        restored
                     }
-                    restored
+                    // Resource updates can precede recreation and the IME/window handoff.
+                    // Complete that transition before teardown starts the next test.
+                    awaitActivityWindowReady(requireNotNull(activity), acknowledgeImmersiveTutorial = true)
                 }
             } catch (cleanupFailure: Throwable) {
                 if (originalFailure != null) originalFailure.addSuppressed(cleanupFailure) else throw cleanupFailure

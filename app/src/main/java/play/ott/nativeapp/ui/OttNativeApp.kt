@@ -190,7 +190,7 @@ fun OttNativeApp(
         if (fullscreen) fullscreen = false else onAction(AppAction.StopPlayback)
     }
     OttTheme {
-        Surface(modifier = Modifier.fillMaxSize().then(if (inPictureInPicture) Modifier else Modifier.safeDrawingPadding()), color = MaterialTheme.colorScheme.background) {
+        Surface(modifier = Modifier.tvRemoteInput().fillMaxSize().then(if (inPictureInPicture) Modifier else Modifier.safeDrawingPadding()), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize()) {
                 if ((fullscreen || inPictureInPicture) && state.playingEntry != null) {
                     NativePlayerPane(state.playingEntry, controller, true, { fullscreen = false }, onPictureInPicture,
@@ -331,6 +331,7 @@ fun OttNativeApp(
         state.seriesEntry?.let { SeriesDialog(it, state.episodes, state.isBusy, onAction) }
         state.error?.let { message ->
             AlertDialog(
+                modifier = Modifier.tvRemoteInput(),
                 onDismissRequest = { onAction(AppAction.DismissError) },
                 title = { Text(stringResource(R.string.library_action_failed)) },
                 text = { Text(message) },
@@ -441,6 +442,7 @@ internal fun MediaCard(entry: MediaEntry, favorite: Boolean, playing: Boolean, o
 private fun SourcesDialog(state: AppUiState, onAction: (AppAction) -> Unit, onDismiss: () -> Unit, onEdit: (SourceConfig?) -> Unit) {
     var deleting by remember { mutableStateOf<SourceConfig?>(null) }
     AlertDialog(
+        modifier = Modifier.tvRemoteInput(),
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.library_sources)) },
         text = {
@@ -466,6 +468,7 @@ private fun SourcesDialog(state: AppUiState, onAction: (AppAction) -> Unit, onDi
     )
     deleting?.let { source ->
         AlertDialog(
+            modifier = Modifier.tvRemoteInput(),
             onDismissRequest = { deleting = null }, title = { Text(stringResource(R.string.library_delete_source_title, source.name)) },
             text = { Text(stringResource(R.string.library_delete_source_description)) },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.library_cancel)) } },
@@ -506,6 +509,7 @@ private fun SettingsDialog(state: AppUiState, onAction: (AppAction) -> Unit, onP
         ?: stringResource(R.string.library_language_system)
     val backgroundPlaybackDescription = stringResource(R.string.library_background_playback)
     AlertDialog(
+        modifier = Modifier.tvRemoteInput(),
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.library_settings)) },
         text = {
@@ -554,7 +558,7 @@ private fun LanguageDialog(languageTag: String, onSelect: (String) -> Unit, onDi
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.testTag("language-dialog"),
+        modifier = Modifier.tvRemoteInput().testTag("language-dialog"),
         title = { Text(stringResource(R.string.library_language)) },
         text = {
             LazyColumn(state = listState, modifier = Modifier.heightIn(max = 480.dp).testTag("language-list"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
