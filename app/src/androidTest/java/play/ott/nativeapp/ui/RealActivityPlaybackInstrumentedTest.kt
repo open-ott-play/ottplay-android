@@ -479,8 +479,14 @@ class RealActivityPlaybackInstrumentedTest {
         .any { it.config.getOrElse(SemanticsProperties.Focused) { false } }
 
     private fun awaitFocused(tag: String) {
-        compose.waitUntil(10_000) { isFocused(tag) }
-        compose.onNodeWithTag(tag).assertIsFocused()
+        try {
+            compose.waitUntil(10_000) { isFocused(tag) }
+            compose.onNodeWithTag(tag).assertIsFocused()
+        } catch (failure: Throwable) {
+            try { capturePlaybackDiagnostics("awaitFocused($tag) failed", includeSemantics = true) }
+            catch (diagnosticFailure: Throwable) { failure.addSuppressed(diagnosticFailure) }
+            throw failure
+        }
     }
 
     private fun awaitNode(tag: String) {
@@ -534,6 +540,18 @@ class RealActivityPlaybackInstrumentedTest {
                 }
             }
             description
+        }
+        if (includeSemantics) {
+            record("system input focus") {
+                shellOutput("dumpsys input").lineSequence().filter {
+                    it.contains("Focused", true) || it.contains("TouchMode", true) || it.contains("filter", true)
+                }.joinToString("\n")
+            }
+            record("system window focus") {
+                shellOutput("dumpsys window").lineSequence().filter {
+                    it.contains("CurrentFocus") || it.contains("FocusedApp") || it.contains("FocusedWindow")
+                }.joinToString("\n")
+            }
         }
 
         if (!includeCompose) return
@@ -605,6 +623,17 @@ class RealActivityPlaybackInstrumentedTest {
         throw failure
     }
 
-    private fun key(code: Int) { instrumentation.sendKeyDownUpSync(code); compose.waitForIdle() }
+    private fun key(code: Int) {
+        // Exercise Android input routing with a virtual remote and fail if the OS rejects it.
+        val now = android.os.SystemClock.uptimeMillis()
+        val source = if (isTv) android.view.InputDevice.SOURCE_DPAD else android.view.InputDevice.SOURCE_KEYBOARD
+        for (action in intArrayOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+            val event = KeyEvent(now, android.os.SystemClock.uptimeMillis(), action, code, 0, 0,
+                android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0, KeyEvent.FLAG_FROM_SYSTEM, source)
+            val injected = instrumentation.uiAutomation.injectInputEvent(event, true)
+            assertTrue("Android must accept remote input key=$code action=$action", injected)
+        }
+        compose.waitForIdle()
+    }
     private fun onMain(block: () -> Unit) = instrumentation.runOnMainSync(block)
 }
