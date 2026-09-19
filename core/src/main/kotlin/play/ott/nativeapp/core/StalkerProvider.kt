@@ -111,7 +111,9 @@ internal class StalkerProvider(private val http: ProviderHttp) {
                         group = genres[channel.string("tv_genre_id")].orEmpty().ifBlank { channel.string("genre") }.ifBlank { "Other" },
                         logo = resolveHttp(endpoint(config).toString(), channel.string("logo")),
                         epgId = channel.string("xmltv_id").ifBlank { id }, headers = config.headers, providerId = id,
-                        headerOrigins = headerOrigins(config.headers, config.url))
+                        headerOrigins = headerOrigins(config.headers, config.url),
+                        nameMessage = if (channel.string("name").isBlank()) CoreMessage(CoreMessageKey.CHANNEL, listOf(id)) else null,
+                        groupMessage = if (genres[channel.string("tv_genre_id")].isNullOrBlank() && channel.string("genre").isBlank()) CoreMessage(CoreMessageKey.OTHER_GROUP) else null)
                 }
             }
             if (expectedTotal != null && entries.size >= expectedTotal) break
@@ -159,10 +161,12 @@ internal class StalkerProvider(private val http: ProviderHttp) {
             val url = channel.string("url").takeIf(String::isNotBlank)?.let { resolveHttp(config.url, it) }
                 ?: portal.newBuilder().addPathSegment("stream").addPathSegment("$id.m3u8").addQueryParameter("mac", config.mac).build().toString()
             MediaEntry(stableId(config.id, "stalker", id), config.id, channel.string("name").ifBlank { "Channel $id" }, url,
-                group = rpcCategory(channel),
+                group = rpcCategory(channel).ifBlank { "Other" },
                 logo = resolveHttp(config.url, channel.string("logo").ifBlank { channel.string("icon") }.ifBlank { channel.string("tv_icon") }),
                 epgId = channel.string("xmltv_id").ifBlank { id }, headers = config.headers, providerId = id,
-                headerOrigins = headerOrigins(config.headers, config.url))
+                headerOrigins = headerOrigins(config.headers, config.url),
+                nameMessage = if (channel.string("name").isBlank()) CoreMessage(CoreMessageKey.CHANNEL, listOf(id)) else null,
+                groupMessage = if (rpcCategory(channel).isBlank()) CoreMessage(CoreMessageKey.OTHER_GROUP) else null)
         }
         return Catalog(entries, epgUrls(config))
     }
@@ -174,5 +178,5 @@ internal class StalkerProvider(private val http: ProviderHttp) {
             is JsonPrimitive -> value.takeUnless { it is JsonNull }?.content
             is JsonArray -> (value.firstOrNull() as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
             else -> null
-        } }.firstOrNull(String::isNotBlank) ?: "Other"
+        } }.firstOrNull(String::isNotBlank).orEmpty()
 }

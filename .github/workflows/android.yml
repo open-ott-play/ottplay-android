@@ -34,6 +34,8 @@ jobs:
           java-version: '17'
           cache: gradle
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: platform-tools
       - name: Install compile SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
       - name: Test release tooling without signing credentials
@@ -42,6 +44,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -v
       - name: Validate Play listing assets
         run: python3 scripts/validate-store-assets.py --require-screenshots
+      - name: Validate all app translations
+        run: python3 scripts/validate-localization.py
       - name: Test, lint and assemble
         run: ./gradlew --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:assembleFull :app:assembleDebugAndroidTest
       - name: Upload debug APK and unsigned release APK/AAB
@@ -123,6 +127,8 @@ jobs:
           sudo rm -rf -- "${ANDROID_HOME:?}/ndk" "${ANDROID_HOME:?}/cmake"
           df -h "$ANDROID_HOME"
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: platform-tools
       - name: Install compile SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
       - name: Install emulator and system image

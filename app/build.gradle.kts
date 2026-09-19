@@ -1,7 +1,7 @@
 import java.io.File
 import java.util.Properties
 
-plugins { id("com.android.application"); kotlin("android"); kotlin("plugin.compose"); kotlin("plugin.serialization") }
+plugins { id("com.android.application"); kotlin("plugin.compose"); kotlin("plugin.serialization") }
 
 val appVersion = Properties().apply {
     rootProject.file("version.properties").inputStream().use(::load)
@@ -67,7 +67,11 @@ android {
             manifestPlaceholders["allowCleartextTraffic"] = "true"
         }
     }
+    // AAPT uses the legacy iw resource code; Android locale APIs use canonical he.
+    androidResources { localeFilters += listOf("en", "hy", "be", "bg", "fr", "de", "el", "iw", "hu", "it", "lv", "lt", "pl", "pt", "ro", "ru", "es", "tr", "uk", "uz") }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    // The in-app picker must work offline after a Play installation in either language.
+    bundle { language { enableSplit = false } }
     testOptions { unitTests.isIncludeAndroidResources = true; animationsDisabled = true }
 }
 tasks.matching { it.name == "prePreviewBuild" }.configureEach {
@@ -79,6 +83,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.05.00"))
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.05.00"))
     implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
@@ -93,12 +98,12 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
     listOf("exoplayer", "exoplayer-hls", "exoplayer-dash", "exoplayer-smoothstreaming", "session", "ui", "datasource-okhttp").forEach {
         implementation("androidx.media3:media3-$it:1.11.1")
     }
-    testImplementation(kotlin("test"))
-    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.0")
+    testImplementation(kotlin("test-junit"))
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("androidx.test:core:1.7.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")

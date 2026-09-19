@@ -24,10 +24,12 @@ object M3uParser {
             val drm = kodi.result()
             val url = httpUrl(baseUrl).toString()
             return Catalog(listOf(MediaEntry(stableId(config.id, url), config.id, config.name.ifBlank { "HLS stream" }, url,
+                nameMessage = config.nameMessage ?: if (config.name.isBlank()) CoreMessage(CoreMessageKey.HLS_STREAM) else null,
                 headers = mergedHeaders(config.headers), drm = drm.drm, mimeType = "application/x-mpegURL",
                 headerOrigins = headerOrigins(config.headers, config.url),
                 playbackUnsupportedReason = drm.unsupportedReason)), listOfNotNull(config.epgUrl.takeIf(String::isNotBlank)),
-                listOfNotNull(drm.unsupportedReason))
+                listOfNotNull(drm.unsupportedReason),
+                if (drm.unsupportedReason != null) listOf(CoreMessage(CoreMessageKey.DRM_UNSUPPORTED)) else emptyList())
         }
         val entries = linkedMapOf<String, MediaEntry>()
         val epgUrls = linkedSetOf<String>()
@@ -108,6 +110,8 @@ object M3uParser {
                     val url = resolveHttp(baseUrl, rawUrl)
                     if (url.isBlank() || rawUrl.contains('<') || rawUrl.contains('>')) { reset(); continue }
                     val allAttrs = defaults + attrs
+                    val generatedTitle = name.isBlank() && attrs["tvg-name"].isNullOrBlank() && attrs["tvg-id"].isNullOrBlank() &&
+                        httpUrl(url).pathSegments.lastOrNull().isNullOrBlank()
                     val title = name.ifBlank { attrs["tvg-name"].orEmpty() }.ifBlank { attrs["tvg-id"].orEmpty() }
                         .ifBlank { httpUrl(url).pathSegments.lastOrNull().orEmpty().ifBlank { "Stream ${entries.size + 1}" } }
                     val entryGroup = attrs["group-title"].orEmpty().ifBlank { group }
@@ -133,6 +137,7 @@ object M3uParser {
                         epgId = attrs["tvg-id"].orEmpty(), headers = headers, catchup = catchup,
                         drm = drm.drm, mimeType = drm.mimeType, playbackUnsupportedReason = drm.unsupportedReason,
                         headerOrigins = origins,
+                        nameMessage = if (generatedTitle) CoreMessage(CoreMessageKey.STREAM, listOf((entries.size + 1).toString())) else null,
                     ))
                     if (entries.size > 100_000) throw ProviderException("Playlist contains more than 100,000 entries")
                     reset()
@@ -140,7 +145,8 @@ object M3uParser {
             }
         }
         if (entries.isEmpty()) throw ProviderException("Playlist contains no playable HTTP or HTTPS entries")
-        return Catalog(entries.values.toList(), epgUrls.toList(), notes.toList())
+        return Catalog(entries.values.toList(), epgUrls.toList(), notes.toList(),
+            if (notes.isNotEmpty()) listOf(CoreMessage(CoreMessageKey.DRM_UNSUPPORTED)) else emptyList())
     }
 
     private fun attributes(text: String): Map<String, String> = attribute.findAll(text).associate {

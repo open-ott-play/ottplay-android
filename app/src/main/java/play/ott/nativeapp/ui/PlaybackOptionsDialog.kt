@@ -10,6 +10,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
+import play.ott.nativeapp.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -63,8 +65,9 @@ internal fun PlaybackOptionsDialog(
     val supportsPip = !isTv && LocalContext.current.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
     val initialFocus = remember { FocusRequester() }
     AlertDialog(
+        modifier = Modifier.tvRemoteInput(),
         onDismissRequest = onDismiss,
-        title = { Text(if (speedOptions) "Скорость воспроизведения" else "Параметры плеера") },
+        title = { Text(if (speedOptions) stringResource(R.string.dialog_speed_title) else stringResource(R.string.dialog_options_title)) },
         text = {
             // The dialog owns a separate window and composition. Wait for that window,
             // so the requester is attached before receiving the first remote event.
@@ -77,7 +80,7 @@ internal fun PlaybackOptionsDialog(
                     val speeds = listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f)
                     val focusedSpeed = speeds.minBy { kotlin.math.abs(it - speed) }
                     speeds.forEach { option ->
-                        ActionButton("${option}×", {
+                        ActionButton(stringResource(R.string.dialog_speed_value, option.toString()), {
                             if (controller?.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH) == true) controller.setPlaybackSpeed(option)
                             onDismiss()
                         }, Modifier.fillMaxWidth().testTag("player-speed-$option")
@@ -85,23 +88,23 @@ internal fun PlaybackOptionsDialog(
                             selected = option == speed, enabled = canChangeSpeed)
                     }
                 } else {
-                    ActionButton("Скорость · ${speed}×", { speedOptions = true }, Modifier.fillMaxWidth()
+                    ActionButton(stringResource(R.string.dialog_speed_current, speed.toString()), { speedOptions = true }, Modifier.fillMaxWidth()
                         .testTag("player-speed-options").then(if (canChangeSpeed) Modifier.focusRequester(initialFocus) else Modifier), enabled = canChangeSpeed)
-                    ActionButton("Аудиодорожка", { onTracks(C.TRACK_TYPE_AUDIO) }, Modifier.fillMaxWidth().testTag("player-audio-options"), enabled = canChangeTracks && audioAvailable)
-                    ActionButton("Субтитры", { onTracks(C.TRACK_TYPE_TEXT) }, Modifier.fillMaxWidth().testTag("player-subtitle-options"), enabled = canChangeTracks && subtitlesAvailable)
+                    ActionButton(stringResource(R.string.dialog_audio), { onTracks(C.TRACK_TYPE_AUDIO) }, Modifier.fillMaxWidth().testTag("player-audio-options"), enabled = canChangeTracks && audioAvailable)
+                    ActionButton(stringResource(R.string.dialog_subtitles), { onTracks(C.TRACK_TYPE_TEXT) }, Modifier.fillMaxWidth().testTag("player-subtitle-options"), enabled = canChangeTracks && subtitlesAvailable)
                     listOf(
-                        AspectRatioFrameLayout.RESIZE_MODE_FIT to "Вписать в экран",
-                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Заполнить с обрезкой",
-                        AspectRatioFrameLayout.RESIZE_MODE_FILL to "Растянуть",
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT to R.string.dialog_scale_fit,
+                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM to R.string.dialog_scale_zoom,
+                        AspectRatioFrameLayout.RESIZE_MODE_FILL to R.string.dialog_scale_fill,
                     ).forEach { (mode, label) ->
-                        ActionButton(label, { onResize(mode); onDismiss() }, Modifier.fillMaxWidth().testTag("player-scale-$mode")
+                        ActionButton(stringResource(label), { onResize(mode); onDismiss() }, Modifier.fillMaxWidth().testTag("player-scale-$mode")
                             .then(if (!canChangeSpeed && mode == AspectRatioFrameLayout.RESIZE_MODE_FIT) Modifier.focusRequester(initialFocus) else Modifier), selected = resizeMode == mode)
                     }
-                    if (supportsPip) ActionButton("Картинка в картинке", { onDismiss(); onPictureInPicture() }, Modifier.fillMaxWidth().testTag("player-pip"))
-                    ActionButton("Закрыть плеер", { onDismiss(); onStop() }, Modifier.fillMaxWidth().testTag("player-stop"))
+                    if (supportsPip) ActionButton(stringResource(R.string.dialog_pip), { onDismiss(); onPictureInPicture() }, Modifier.fillMaxWidth().testTag("player-pip"))
+                    ActionButton(stringResource(R.string.dialog_stop), { onDismiss(); onStop() }, Modifier.fillMaxWidth().testTag("player-stop"))
                 }
             }
         },
-        confirmButton = { ActionButton("Готово", onDismiss) },
+        confirmButton = { ActionButton(stringResource(R.string.dialog_done), onDismiss) },
     )
 }

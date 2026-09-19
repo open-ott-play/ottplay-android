@@ -25,6 +25,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -35,6 +36,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import play.ott.nativeapp.core.MediaEntry
 import play.ott.nativeapp.core.MediaKind
+import play.ott.nativeapp.core.CoreMessage
+import play.ott.nativeapp.core.CoreMessageKey
+import play.ott.nativeapp.R
 import play.ott.nativeapp.core.SourceConfig
 import play.ott.nativeapp.core.SourceKind
 
@@ -42,6 +46,7 @@ import play.ott.nativeapp.core.SourceKind
 @RunWith(AndroidJUnit4::class)
 class NativeUiInstrumentedTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    private fun text(id: Int) = compose.activity.getString(id)
     private val source = SourceConfig("ui-test", "Демоисточник", SourceKind.M3U, "https://example.com/list.m3u")
     private val entry = MediaEntry("ui-test:movie", source.id, "Тестовый ролик", "https://example.com/video.mp4", kind = MediaKind.MOVIE)
 
@@ -64,7 +69,7 @@ class NativeUiInstrumentedTest {
                 controller = null, onPictureInPicture = {}, onFullscreenChanged = {},
             )
         }
-        compose.onNodeWithText("Попробовать демо").performScrollTo().activateForDevice()
+        compose.onNodeWithText(text(R.string.library_try_demo)).performScrollTo().activateForDevice()
         compose.runOnIdle {
             assertTrue("Demo activation must dispatch its action", actions.any { it == AppAction.AddDemo })
             assertEquals(listOf(source), snapshot.sources)
@@ -78,12 +83,12 @@ class NativeUiInstrumentedTest {
         compose.waitForIdle()
         compose.onNodeWithTag("player-container").assertDoesNotExist()
         compose.onNodeWithTag("now-playing-bar").assertIsDisplayed()
-        compose.onNodeWithText("Источники").activateForDevice()
-        compose.onNodeWithText("Добавить по ссылке").performScrollTo().activateForDevice()
-        compose.onNodeWithText("Название источника").performTextInput("Новая библиотека")
-        compose.onNodeWithText("Адрес плейлиста").performTextInput("https://example.com/new.m3u")
-        compose.onNodeWithText("Архив, часов (если нет в плейлисте)").performScrollTo().performTextInput("48")
-        compose.onNodeWithText("Добавить", substring = false).activateForDevice()
+        compose.onNodeWithText(text(R.string.library_sources)).activateForDevice()
+        compose.onNodeWithText(text(R.string.library_add_by_url)).performScrollTo().activateForDevice()
+        compose.onNodeWithText(text(R.string.dialog_source_name)).performTextInput("Новая библиотека")
+        compose.onNodeWithText(text(R.string.dialog_source_playlist_url)).performTextInput("https://example.com/new.m3u")
+        compose.onNodeWithText(text(R.string.dialog_source_archive_hours)).performScrollTo().performTextInput("48")
+        compose.onNodeWithText(text(R.string.dialog_add), substring = false).activateForDevice()
         compose.runOnIdle {
             assertTrue(actions.any { it == AppAction.AddDemo })
             assertEquals(entry, (actions.first { it is AppAction.Play } as AppAction.Play).entry)
@@ -103,13 +108,83 @@ class NativeUiInstrumentedTest {
                 )
             }
         }
-        compose.onNodeWithText("Фильмы").assertIsFocused()
+        compose.onNodeWithText(text(R.string.message_section_movie)).assertIsFocused()
         compose.onRoot().performKeyInput { pressKey(Key.DirectionUp) }
-        compose.onNodeWithText("Эфир").assertIsFocused()
+        compose.onNodeWithText(text(R.string.library_tab_live)).assertIsFocused()
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
-        compose.onNodeWithText("Фильмы").assertIsFocused()
+        compose.onNodeWithText(text(R.string.message_section_movie)).assertIsFocused()
         compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
         compose.onNodeWithTag("catalog-item-${entry.id}").assertIsDisplayed()
+    }
+
+    @Test fun localizedGroupChangeRestoresCatalogAndPreservesProviderGroupFilter() {
+        val generated = entry.copy(group = "Local test")
+        val provider = entry.copy(id = "provider-movie", name = "Provider movie", group = "Provider group")
+        var snapshot by mutableStateOf(AppUiState(
+            sources = listOf(source), selectedSourceId = source.id, entries = listOf(generated, provider),
+        ))
+        compose.setContent {
+            OttNativeApp(snapshot, {}, null, {}, {})
+        }
+        compose.onNodeWithTag("library-group-Local test").performSemanticsAction(SemanticsActions.OnClick) { check(it()) }
+        compose.onNodeWithTag("catalog-item-${generated.id}").assertIsDisplayed()
+        compose.onNodeWithTag("catalog-item-${provider.id}").assertDoesNotExist()
+
+        // The retained ViewModel republishes translated presentation labels after locale recreation.
+        compose.runOnIdle {
+            snapshot = snapshot.copy(entries = listOf(generated.copy(group = "Локальный тест"), provider))
+        }
+        compose.onNodeWithTag("catalog-item-${generated.id}").assertIsDisplayed()
+        compose.onNodeWithTag("catalog-item-${provider.id}").assertIsDisplayed()
+
+        compose.onNodeWithTag("library-group-Provider group").performSemanticsAction(SemanticsActions.OnClick) { check(it()) }
+        compose.runOnIdle { snapshot = snapshot.copy(entries = listOf(generated, provider)) }
+        compose.onNodeWithTag("catalog-item-${provider.id}").assertIsDisplayed()
+        compose.onNodeWithTag("catalog-item-${generated.id}").assertDoesNotExist()
+    }
+
+    @Test fun sourceEditorRelocalizesUntouchedGeneratedNameButPreservesExplicitRename() {
+        val generatedName = CoreMessage(CoreMessageKey.DEMO_SOURCE)
+        var original by mutableStateOf(source.copy(name = "Тест без интернета", nameMessage = generatedName))
+        var editorOpen by mutableStateOf(true)
+        val saved = mutableListOf<SourceConfig>()
+        compose.setContent {
+            if (editorOpen) SourceEditor(original, { editorOpen = false }) {
+                saved += it
+                editorOpen = false
+            }
+        }
+
+        // A system language change republishes the same source with a new generated label.
+        compose.runOnIdle { original = original.copy(name = "Offline demo") }
+        compose.onNodeWithText("Offline demo").assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.dialog_save)).performSemanticsAction(SemanticsActions.OnClick) { check(it()) }
+        compose.runOnIdle {
+            assertEquals("Offline demo", saved.single().name)
+            assertEquals(generatedName, saved.single().nameMessage)
+            assertTrue(!saved.single().nameIsUserDefined)
+        }
+        compose.onNodeWithText(text(R.string.dialog_source_edit_title)).assertDoesNotExist()
+        awaitActivityWindowReady(compose.activity)
+
+        // Even a rename equal to a legacy translation is the user's text, not a generated label.
+        // Reopen the saved source as the app does; Save disposes the previous editor.
+        compose.runOnIdle {
+            original = saved.single()
+            editorOpen = true
+        }
+        compose.onNodeWithText(text(R.string.dialog_source_name)).performTextReplacement("Тест без интернета")
+        compose.runOnIdle { original = original.copy(name = "Démonstration hors ligne") }
+        compose.onNodeWithText("Тест без интернета").assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.dialog_save)).performSemanticsAction(SemanticsActions.OnClick) { check(it()) }
+        compose.runOnIdle {
+            assertEquals(2, saved.size)
+            assertEquals("Тест без интернета", saved.last().name)
+            assertEquals(null, saved.last().nameMessage)
+            assertTrue(saved.last().nameIsUserDefined)
+        }
+        compose.onNodeWithText(text(R.string.dialog_source_edit_title)).assertDoesNotExist()
+        awaitActivityWindowReady(compose.activity)
     }
 
     @Test fun televisionEntersANewTabAfterThePreviousGridWasScrolled() {

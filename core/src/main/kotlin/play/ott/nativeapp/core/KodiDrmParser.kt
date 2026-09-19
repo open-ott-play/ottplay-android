@@ -29,51 +29,51 @@ internal class KodiDrmParser {
         }
         if (relevant.isEmpty()) return Result(mimeType = type)
         return try {
-            require(!duplicate) { "Повторные настройки DRM в записи плейлиста" }
+            require(!duplicate) { "Duplicate DRM settings in playlist entry" }
             val allowed = setOf("license_type", "license_key", "license_url", "license_url_append", "drm_legacy", "drm")
             require(relevant.keys.all { it.substringAfterLast('.') in allowed }) {
-                "Дополнительные параметры Kodi DRM не поддерживаются"
+                "Additional Kodi DRM parameters are unsupported"
             }
             val modern = properties["inputstream.adaptive.drm"]
             val legacy = properties["inputstream.adaptive.drm_legacy"]
             val old = properties["inputstream.adaptive.license_type"]
-            require(listOfNotNull(modern, legacy, old).size == 1) { "Неоднозначная или неполная настройка DRM" }
+            require(listOfNotNull(modern, legacy, old).size == 1) { "Ambiguous or incomplete DRM configuration" }
             val config = when {
                 modern != null -> {
-                    require(relevant.size == 1) { "Смешанные форматы Kodi DRM не поддерживаются" }
+                    require(relevant.size == 1) { "Mixed Kodi DRM formats are unsupported" }
                     modern(modern)
                 }
                 legacy != null -> {
-                    require(relevant.size == 1) { "Смешанные форматы Kodi DRM не поддерживаются" }
+                    require(relevant.size == 1) { "Mixed Kodi DRM formats are unsupported" }
                     val fields = legacy.split('|')
-                    require(fields.size in 2..3) { "Для DRM нужен адрес сервера лицензии" }
+                    require(fields.size in 2..3) { "DRM requires a license server address" }
                     DrmConfig(scheme(fields[0]), fields[1], queryHeaders(fields.getOrElse(2) { "" }), multiSession = true)
                 }
                 else -> old(requireNotNull(old))
             }
             Result(DrmPolicy.validated(config), type)
         } catch (error: IllegalArgumentException) {
-            Result(mimeType = type, unsupportedReason = error.message ?: "Настройка Kodi DRM не поддерживается")
+            Result(mimeType = type, unsupportedReason = error.message ?: "Kodi DRM configuration is unsupported")
         } catch (_: Exception) {
             // JSON exceptions may contain the license token; never publish their message.
-            Result(mimeType = type, unsupportedReason = "Некорректная настройка Kodi DRM")
+            Result(mimeType = type, unsupportedReason = "Invalid Kodi DRM configuration")
         }
     }
 
     private fun old(type: String): DrmConfig {
         val key = properties["inputstream.adaptive.license_key"].orEmpty()
         val fields = key.split('|')
-        require(fields.size == 1 || fields.size == 4) { "Поддерживается только обычный POST лицензии DRM" }
+        require(fields.size == 1 || fields.size == 4) { "Only a standard DRM license POST is supported" }
         if (fields.size == 4) {
             val post = decode(fields[2])
             require(post == "R{SSM}" && fields[3] in setOf("", "R")) {
-                "Преобразования запроса или ответа лицензии DRM не поддерживаются"
+                "DRM license request or response transformations are unsupported"
             }
         }
         val splitUrl = properties["inputstream.adaptive.license_url"]
-        require(splitUrl == null || fields[0].isEmpty()) { "Неоднозначный адрес лицензии DRM" }
+        require(splitUrl == null || fields[0].isEmpty()) { "Ambiguous DRM license address" }
         require(properties["inputstream.adaptive.license_url_append"] == null || splitUrl != null) {
-            "Неполный адрес лицензии DRM"
+            "Incomplete DRM license address"
         }
         val url = splitUrl?.plus(properties["inputstream.adaptive.license_url_append"].orEmpty()) ?: fields[0]
         return DrmConfig(scheme(type), url, queryHeaders(fields.getOrElse(1) { "" }))
@@ -81,18 +81,18 @@ internal class KodiDrmParser {
 
     private fun modern(value: String): DrmConfig {
         val root = try { Json.parseToJsonElement(value) as? JsonObject } catch (_: Exception) { null }
-        require(root?.size == 1) { "Нужна одна явно выбранная система DRM" }
+        require(root?.size == 1) { "Exactly one explicit DRM system is required" }
         val entry = requireNotNull(root).entries.single()
-        val config = entry.value as? JsonObject ?: throw IllegalArgumentException("Некорректная настройка Kodi DRM")
+        val config = entry.value as? JsonObject ?: throw IllegalArgumentException("Invalid Kodi DRM configuration")
         require(config.keys.all { it in setOf("license", "force_single_session") }) {
-            "Дополнительные параметры Kodi DRM не поддерживаются"
+            "Additional Kodi DRM parameters are unsupported"
         }
-        val license = config["license"] as? JsonObject ?: throw IllegalArgumentException("Для DRM нужен адрес сервера лицензии")
+        val license = config["license"] as? JsonObject ?: throw IllegalArgumentException("DRM requires a license server address")
         require(license.keys.all { it in setOf("server_url", "req_headers") }) {
-            "Преобразования запроса или ответа лицензии DRM не поддерживаются"
+            "DRM license request or response transformations are unsupported"
         }
         val forceSingle = config["force_single_session"]?.let {
-            (it as? JsonPrimitive)?.booleanOrNull ?: throw IllegalArgumentException("Некорректный режим сессии DRM")
+            (it as? JsonPrimitive)?.booleanOrNull ?: throw IllegalArgumentException("Invalid DRM session mode")
         } ?: false
         return DrmConfig(scheme(entry.key), string(license, "server_url"),
             queryHeaders(string(license, "req_headers", required = false)), multiSession = !forceSingle)
@@ -101,7 +101,7 @@ internal class KodiDrmParser {
     private fun string(root: JsonObject, key: String, required: Boolean = true): String {
         val value = root[key]
         if (!required && value == null) return ""
-        require(value is JsonPrimitive && value.isString) { "Некорректная настройка Kodi DRM" }
+        require(value is JsonPrimitive && value.isString) { "Invalid Kodi DRM configuration" }
         return value.content
     }
 
@@ -109,7 +109,7 @@ internal class KodiDrmParser {
         "com.widevine.alpha" -> DrmScheme.WIDEVINE
         "com.microsoft.playready" -> DrmScheme.PLAYREADY
         "org.w3.clearkey" -> DrmScheme.CLEARKEY
-        else -> throw IllegalArgumentException("Указанная система DRM не поддерживается")
+        else -> throw IllegalArgumentException("The selected DRM system is unsupported")
     }
 
     private fun queryHeaders(value: String): Map<String, String> {
@@ -117,16 +117,16 @@ internal class KodiDrmParser {
         val result = linkedMapOf<String, String>()
         val names = HashSet<String>()
         value.split('&').forEach { pair ->
-            require('=' in pair) { "Некорректный заголовок лицензии DRM" }
+            require('=' in pair) { "Invalid DRM license header" }
             val name = decode(pair.substringBefore('='))
-            require(names.add(name.lowercase(Locale.ROOT))) { "Повторный заголовок лицензии DRM" }
+            require(names.add(name.lowercase(Locale.ROOT))) { "Duplicate DRM license header" }
             result[name] = decode(pair.substringAfter('='))
         }
         return DrmPolicy.headers(result)
     }
 
     private fun decode(value: String): String = try { URLDecoder.decode(value, "UTF-8") }
-        catch (_: IllegalArgumentException) { throw IllegalArgumentException("Некорректное кодирование параметра DRM") }
+        catch (_: IllegalArgumentException) { throw IllegalArgumentException("Invalid DRM parameter encoding") }
 
     data class Result(val drm: DrmConfig? = null, val mimeType: String? = null, val unsupportedReason: String? = null)
 }

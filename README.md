@@ -1,6 +1,6 @@
 # OTT-play Native for Android
 
-A standalone Android app for personal IPTV playlists, movies, and series. The interface uses Kotlin and Jetpack Compose; playback runs through Android Media3 / ExoPlayer. The app supports touch controls and Android TV remotes.
+A standalone Android app for personal IPTV playlists, movies, and series. The interface uses Kotlin and Jetpack Compose; playback runs through Android Media3 / ExoPlayer. The app supports touch controls and Android TV remotes. The interface follows Android language preferences and falls back to English. Settings → Language can select a different language or return to System default; all 20 languages available in OTT-play FOSS are included offline.
 
 This is a separate product with application ID `play.ott.foss.nativeapp`. It can be installed alongside `ottplay-foss`. Signed previews use the separate ID `play.ott.foss.nativeapp.preview`, with a stable signing identity configured independently from production. Neither running nor building the app requires the JavaScript player, WebView, Capacitor, or Node.js. The current project version is `0.2.1`; implementing a feature does not establish compatibility with every TV, codec, or provider service.
 
@@ -10,6 +10,8 @@ This is a separate product with application ID `play.ott.foss.nativeapp`. It can
 2. Choose the demo option. The APK includes an eight-second synthetic video that works offline without an account. Its audio track is silent.
 3. Add your M3U playlist, select a local M3U file, or enter your Xtream or Stalker account details.
 4. Open a channel, movie, or episode. Programme listings can be loaded from the source's or playlist's XMLTV URL.
+
+The linked historical preview predates the 20-language interface. Use a build of the current source to exercise the language picker described here; the old preview is not evidence for that feature.
 
 The app does not provide a subscription, a built-in commercial catalog, or permission to access sources. Use URLs and accounts you are authorized to access.
 
@@ -37,7 +39,9 @@ The offline privacy policy is available before setup and in settings. The [publi
 
 Install JDK 17 and the Android SDK with platform 36, build-tools 36.0.0, and platform-tools. The Gradle Wrapper is included. Set the SDK location with `ANDROID_HOME` or a local `local.properties` file; do not commit personal paths or signing keys.
 
-The project pins Kotlin **2.3.0**, Android Gradle Plugin **8.13.2**, and Gradle **8.14.3**. AGP 8.13.2 includes R8 8.13.19 with Kotlin 2.3 support: [official release notes](https://developer.android.com/build/releases/agp-8-13-0-release-notes). The Wrapper sets `distributionSha256Sum` from the [official Gradle 8.14.3 all checksum](https://services.gradle.org/distributions/gradle-8.14.3-all.zip.sha256) to verify the downloaded distribution.
+OkHttp is pinned to **5.4.0**, the latest release compatible with compile SDK 36. Version 5.5.0 requires API 37 and is excluded from Dependabot updates until that SDK is available and validated.
+
+The project pins Kotlin **2.3.0**, Android Gradle Plugin **9.4.0**, and Gradle **9.7.1**. The Android module uses AGP's built-in Kotlin support; the Kotlin/JVM, Compose compiler and serialization plugins remain explicitly configured. The Wrapper sets `distributionSha256Sum` from the [official Gradle 9.7.1 all checksum](https://services.gradle.org/distributions/gradle-9.7.1-all.zip.sha256) to verify the downloaded distribution.
 
 ```bash
 ./gradlew :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug

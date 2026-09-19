@@ -5,27 +5,38 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityWindowInfo
+import android.view.inspector.WindowInspector
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.printToString
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
+import com.google.common.util.concurrent.ListenableFuture
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
@@ -44,6 +55,8 @@ import play.ott.nativeapp.OttplayApplication
 import play.ott.nativeapp.TvActivity
 import play.ott.nativeapp.data.NativeRepository
 import play.ott.nativeapp.data.UserPreferences
+import play.ott.nativeapp.i18n.AppLanguages
+import play.ott.nativeapp.playback.PlaybackService
 import play.ott.nativeapp.playback.PlaybackTestLifecycle
 
 /** Real Activity, persisted catalogue, ViewModel, service and decoder; no replacement UI/controller. */
@@ -54,11 +67,15 @@ class RealActivityPlaybackInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val repository get() = (context.applicationContext as OttplayApplication).repository
-    private val source = NativeRepository.demoSource().copy(id = "activity-test-${UUID.randomUUID()}", name = "Activity test")
+    private val source = NativeRepository.demoSource().copy(
+        id = "activity-test-${UUID.randomUUID()}", name = "Activity test",
+        nameMessage = null, nameIsUserDefined = true,
+    )
     private val entryId get() = "${source.id}:pattern"
     private val isTv get() = context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     private var activity: MainActivity? = null
     private var savedPreferences: UserPreferences? = null
+    private var menuOpenAttempt = 0
 
     @Before fun seedOnlyOurSyntheticSource(): Unit = runBlocking {
         PlaybackTestLifecycle.finishPreviousPlayback()
@@ -79,13 +96,45 @@ class RealActivityPlaybackInstrumentedTest {
         val playerView = launchAndPlayDemo()
         val actualPlayer = requireNotNull(playerView.player)
         if (isTv) {
+            // Reveal controls through the remote if startup already outlasted
+            // their timer; keep them visible until the explicit auto-hide phase.
+            var revealControls = false
+            onMain {
+                playerView.controllerShowTimeoutMs = 0
+                revealControls = !playerView.isControllerFullyVisible
+            }
+            if (revealControls) key(KeyEvent.KEYCODE_DPAD_CENTER)
             awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
             key(KeyEvent.KEYCODE_DPAD_CENTER)
         } else onMain { playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause).performClick() }
         awaitPlayback("Native pause must preserve the selected item") { !it.playWhenReady && it.currentMediaItem?.mediaId == entryId }
-        if (isTv) key(KeyEvent.KEYCODE_DPAD_CENTER)
-        else onMain { playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause).performClick() }
+        if (isTv) {
+            // Keep the current remote focus while the resume action settles. The
+            // automatic-hide behavior is exercised explicitly in the next phase.
+            onMain { playerView.controllerShowTimeoutMs = 0 }
+            key(KeyEvent.KEYCODE_DPAD_CENTER)
+        } else onMain { playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause).performClick() }
         awaitPlayback("Native play must resume") { it.isPlaying }
+
+        if (isTv) {
+            awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
+            onMain {
+                playerView.controllerShowTimeoutMs = 500
+                playerView.showController()
+            }
+            awaitState("Native controls must automatically hide during playback") {
+                var hidden = false
+                onMain { hidden = !playerView.isControllerFullyVisible }
+                hidden
+            }
+            var retainsRemoteFocus = false
+            onMain { retainsRemoteFocus = playerView.hasFocus() }
+            if (!retainsRemoteFocus) {
+                capturePlaybackDiagnostics("Automatic controller hide lost native remote focus", includeSemantics = true)
+            }
+            assertTrue("Automatic controller hide must retain remote focus within the native player", retainsRemoteFocus)
+            onMain { playerView.controllerShowTimeoutMs = 4000 }
+        }
 
         openOptions()
         compose.onNodeWithTag("player-subtitle-options").assertIsNotEnabled() // Fixture has no subtitle stream.
@@ -98,6 +147,18 @@ class RealActivityPlaybackInstrumentedTest {
         onMain { assertEquals(AspectRatioFrameLayout.RESIZE_MODE_ZOOM, playerView.resizeMode) }
 
         if (isTv) {
+            // Isolate explicit Back behavior from the separately tested auto-hide
+            // timer, then let its visibility callback update Compose's BackHandler.
+            onMain {
+                playerView.controllerShowTimeoutMs = 0
+                if (!playerView.isControllerFullyVisible) playerView.showController()
+            }
+            awaitState("Native controls must be visible before testing explicit Back") {
+                var visible = false
+                onMain { visible = playerView.isControllerFullyVisible }
+                visible
+            }
+            compose.waitForIdle()
             // The first Back dismisses controls; the second returns to the catalogue and restores focus.
             key(KeyEvent.KEYCODE_BACK)
             onMain { assertTrue("Back must hide native controls", !playerView.isControllerFullyVisible) }
@@ -152,6 +213,165 @@ class RealActivityPlaybackInstrumentedTest {
             awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
             key(KeyEvent.KEYCODE_DPAD_CENTER)
             awaitPlayback("TV playback must resume when the user presses Play") { it.isPlaying }
+            val resumedView = awaitPlayerView()
+            onMain { resumedView.controllerShowTimeoutMs = 0 }
+            key(KeyEvent.KEYCODE_DPAD_RIGHT)
+            awaitState("Right must move focus between native controls after the language/IME handoff") {
+                var moved = false
+                onMain {
+                    moved = resumedView.hasFocus() &&
+                        resumedView.findFocus()?.id != androidx.media3.ui.R.id.exo_play_pause
+                }
+                moved
+            }
+            key(KeyEvent.KEYCODE_DPAD_LEFT)
+            awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
+            onMain {
+                assertTrue("Native TV gear must open the same remote-aware Options menu",
+                    resumedView.findViewById<View>(androidx.media3.ui.R.id.exo_settings).performClick())
+            }
+            awaitNode("player-speed-options")
+            key(KeyEvent.KEYCODE_BACK)
+            awaitActivityWindowReady(requireNotNull(activity))
+            awaitViewFocus(androidx.media3.ui.R.id.exo_play_pause)
+        }
+    }
+
+    @Test fun changingAppLanguageRecreatesActivityWithoutPausingOrLosingPlayback() {
+        // A phone with background playback disabled must still survive recreation;
+        // the existing Home test deliberately enables background playback instead.
+        runBlocking { repository.preferences.update { it.copy(backgroundPlayback = false) } }
+        launchAndPlayDemo()
+        val original = requireNotNull(activity)
+        var previousTag = ""
+        var previousLanguage = ""
+        var targetTag = ""
+        onMain {
+            previousTag = AppLanguages.currentTag()
+            previousLanguage = original.resources.configuration.locales[0].language
+            targetTag = if (previousLanguage == "en") "ru" else "en"
+        }
+
+        // The Activity releases its controller during recreation. A separate connection
+        // observes the same service across that handoff, including transient pauses.
+        var connection: ListenableFuture<MediaController>? = null
+        var observer: MediaController? = null
+        var playerListener: Player.Listener? = null
+        var observing = false
+        val interruptions = mutableListOf<String>() // All accesses are on the main looper.
+        fun recordInterruption(description: String) {
+            interruptions += description
+            Log.w("OttPlaybackUiTest", "language recreation interruption: $description")
+        }
+        var originalFailure: Throwable? = null
+        try {
+            onMain {
+                connection = MediaController.Builder(context.applicationContext,
+                    SessionToken(context, ComponentName(context, PlaybackService::class.java)))
+                    .setListener(object : MediaController.Listener {
+                        override fun onDisconnected(controller: MediaController) {
+                            if (observing) recordInterruption("service controller disconnected")
+                        }
+                    }).buildAsync()
+            }
+            val player = requireNotNull(connection).get(10, TimeUnit.SECONDS)
+            observer = player
+            awaitPlaybackWithoutSurface("Independent controller must observe the playing demo", player) {
+                player.isConnected && it.isPlaying && it.currentMediaItem?.mediaId == entryId
+            }
+            // Rewind the eight-second fixture before changing configuration. Do not
+            // issue Play or replace its item after the switch: that would hide a pause.
+            onMain { player.seekTo(0) }
+            awaitPlaybackWithoutSurface("Rewound demo must be playing before the language switch", player) {
+                it.isPlaying && it.currentPosition in 100L..2_000L && it.currentMediaItem?.mediaId == entryId
+            }
+            onMain {
+                playerListener = object : Player.Listener {
+                    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        if (!playWhenReady) recordInterruption("playWhenReady=false, reason=$reason")
+                    }
+
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        if (mediaItem?.mediaId != entryId) {
+                            recordInterruption("item=${mediaItem?.mediaId}, reason=$reason")
+                        }
+                    }
+                }.also(player::addListener)
+                observing = true
+                Log.i("OttPlaybackUiTest", "language switch $previousTag -> $targetTag; " +
+                    "item=${player.currentMediaItem?.mediaId}, position=${player.currentPosition}")
+                AppLanguages.setLanguage(targetTag)
+            }
+
+            awaitState("Language change must resume a new launcher Activity in $targetTag") {
+                var replaced = false
+                onMain {
+                    val resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                        .filterIsInstance<MainActivity>().firstOrNull { it.componentName == original.componentName }
+                    if (resumed != null) activity = resumed
+                    replaced = resumed != null && resumed !== original &&
+                        resumed.resources.configuration.locales[0].language == targetTag &&
+                        AppLanguages.currentTag() == targetTag
+                }
+                replaced
+            }
+            awaitNode("player-container")
+            val replacementView = awaitPlayerView()
+            var resumedPosition = 0L
+            onMain {
+                assertEquals("Recreation must keep the phone/TV launcher", original.javaClass, requireNotNull(activity).javaClass)
+                assertEquals("Replacement surface must retain the selected item", entryId, replacementView.player?.currentMediaItem?.mediaId)
+                resumedPosition = player.currentPosition
+            }
+            // Observe beyond the bounded visibility handoff as well, so a delayed
+            // expiry that incorrectly pauses the resumed Activity cannot pass.
+            val observeUntil = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+            awaitPlaybackWithoutSurface("Playback must continue after locale recreation and handoff expiry", player) {
+                System.nanoTime() >= observeUntil && player.isConnected && it.isPlaying &&
+                    it.currentMediaItem?.mediaId == entryId && it.currentPosition != resumedPosition
+            }
+            onMain {
+                Log.i("OttPlaybackUiTest", "language recreation complete; item=${player.currentMediaItem?.mediaId}, " +
+                    "position=${player.currentPosition}, interruptions=$interruptions")
+                assertTrue("Language recreation interrupted playback: $interruptions", interruptions.isEmpty())
+                assertTrue("Playback must remain requested", player.playWhenReady)
+            }
+        } catch (failure: Throwable) {
+            originalFailure = failure
+            throw failure
+        } finally {
+            try {
+                var changed = false
+                var beforeRestore: MainActivity? = null
+                onMain {
+                    observing = false
+                    playerListener?.let { observer?.removeListener(it) }
+                    connection?.let(MediaController::releaseFuture)
+                    changed = AppLanguages.currentTag() != previousTag
+                    beforeRestore = activity
+                    AppLanguages.setLanguage(previousTag)
+                }
+                if (changed) {
+                    awaitState("The test must restore the previous app language in a new Activity") {
+                        var restored = false
+                        onMain {
+                            val resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                                .filterIsInstance<MainActivity>().firstOrNull { it.componentName == original.componentName }
+                            if (resumed != null) activity = resumed
+                            restored = resumed != null && resumed !== beforeRestore &&
+                                beforeRestore?.isDestroyed == true &&
+                                AppLanguages.currentTag() == previousTag &&
+                                resumed.resources.configuration.locales[0].language == previousLanguage
+                        }
+                        restored
+                    }
+                    // Resource updates can precede recreation and the IME/window handoff.
+                    // Complete that transition before teardown starts the next test.
+                    awaitActivityWindowReady(requireNotNull(activity), acknowledgeImmersiveTutorial = true)
+                }
+            } catch (cleanupFailure: Throwable) {
+                if (originalFailure != null) originalFailure.addSuppressed(cleanupFailure) else throw cleanupFailure
+            }
         }
     }
 
@@ -221,6 +441,12 @@ class RealActivityPlaybackInstrumentedTest {
             // Crucially no RequestFocus or touch injection: launch must create usable remote focus.
             awaitFocused("library-tab-MOVIES")
             key(KeyEvent.KEYCODE_DPAD_RIGHT)
+            // The rail scrolls the lazy target into composition and waits a frame before
+            // assigning focus. Observe that real transition without injecting focus.
+            val focusStarted = System.nanoTime()
+            awaitFocused("catalog-item-$entryId")
+            Log.i("OttPlaybackUiTest", "D-pad catalogue focus settled after " +
+                "${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - focusStarted)} ms")
             compose.onNodeWithTag("catalog-item-$entryId").assertIsFocused()
             key(KeyEvent.KEYCODE_DPAD_CENTER)
         } else compose.onNodeWithTag("catalog-item-$entryId").performClick()
@@ -256,7 +482,11 @@ class RealActivityPlaybackInstrumentedTest {
             onMain { focused = activity?.window?.decorView?.findViewWithTag<View>("ott-native-video")?.hasFocus() == true }
             focused
         }
+        menuOpenAttempt++
+        // A semantics query synchronizes Compose and could hide the focus-handoff race.
+        capturePlaybackDiagnostics("openOptions#$menuOpenAttempt before input", includeCompose = false)
         if (isTv) key(KeyEvent.KEYCODE_MENU) else compose.onNodeWithTag("player-options").performClick()
+        capturePlaybackDiagnostics("openOptions#$menuOpenAttempt after input")
         awaitNode("player-speed-options")
     }
 
@@ -279,13 +509,101 @@ class RealActivityPlaybackInstrumentedTest {
         .any { it.config.getOrElse(SemanticsProperties.Focused) { false } }
 
     private fun awaitFocused(tag: String) {
-        compose.waitUntil(10_000) { isFocused(tag) }
-        compose.onNodeWithTag(tag).assertIsFocused()
+        try {
+            compose.waitUntil(10_000) { isFocused(tag) }
+            compose.onNodeWithTag(tag).assertIsFocused()
+        } catch (failure: Throwable) {
+            try { capturePlaybackDiagnostics("awaitFocused($tag) failed", includeSemantics = true) }
+            catch (diagnosticFailure: Throwable) { failure.addSuppressed(diagnosticFailure) }
+            throw failure
+        }
     }
 
     private fun awaitNode(tag: String) {
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag(tag).assertIsDisplayed()
+        try {
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag(tag).assertIsDisplayed()
+        } catch (failure: Throwable) {
+            // Capture the failed UI before @After removes its Activity and Dialogs.
+            // Diagnostics must never replace the original assertion/timeout.
+            try {
+                capturePlaybackDiagnostics("awaitNode($tag) failed; menuAttempt=$menuOpenAttempt", includeSemantics = true)
+            } catch (diagnosticFailure: Throwable) {
+                failure.addSuppressed(diagnosticFailure)
+            }
+            throw failure
+        }
+    }
+
+    private fun capturePlaybackDiagnostics(stage: String, includeCompose: Boolean = true, includeSemantics: Boolean = false) {
+        fun record(label: String, read: () -> String) {
+            try {
+                read().chunked(3_000).forEachIndexed { index, text ->
+                    Log.i("OttPlaybackUiTest", "$stage; $label[$index]: $text")
+                }
+            } catch (failure: Throwable) {
+                Log.w("OttPlaybackUiTest", "$stage; $label unavailable", failure)
+            }
+        }
+
+        record("windows") {
+            var description = ""
+            onMain {
+                fun describe(view: View?): String {
+                    if (view == null) return "null"
+                    val id = runCatching { view.resources.getResourceName(view.id) }.getOrDefault(view.id.toString())
+                    val playback = if (view is PlayerView) {
+                        val button = view.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause)
+                        ", controllerVisible=${view.isControllerFullyVisible}, controllerTimeoutMs=${view.controllerShowTimeoutMs}, " +
+                            "playPauseShown=${button?.isShown}, playPauseFocused=${button?.hasFocus()}"
+                    } else ""
+                    return "${view.javaClass.name}@${System.identityHashCode(view)}(id=$id, tag=${view.tag}, " +
+                        "attached=${view.isAttachedToWindow}, windowFocus=${view.hasWindowFocus()}, " +
+                        "hasFocus=${view.hasFocus()}, visibility=${view.visibility}$playback)"
+                }
+                val roots = if (Build.VERSION.SDK_INT >= 29) WindowInspector.getGlobalWindowViews()
+                    else listOfNotNull(activity?.window?.decorView)
+                description = "activityFocus=${describe(activity?.currentFocus)}; " + roots.joinToString("\n") { root ->
+                    val params = root.layoutParams as? WindowManager.LayoutParams
+                    "title=${params?.title}, type=${params?.type}, token=${root.windowToken}, root=${describe(root)}, " +
+                        "focusedChild=${describe(root.findFocus())}, nativePlayer=${describe(root.findViewWithTag<View>("ott-native-video"))}"
+                }
+            }
+            description
+        }
+        if (includeSemantics) {
+            record("system input focus") {
+                shellOutput("dumpsys input").lineSequence().filter {
+                    it.contains("Focused", true) || it.contains("TouchMode", true) || it.contains("filter", true)
+                }.joinToString("\n")
+            }
+            record("system window focus") {
+                shellOutput("dumpsys window").lineSequence().filter {
+                    it.contains("CurrentFocus") || it.contains("FocusedApp") || it.contains("FocusedWindow")
+                }.joinToString("\n")
+            }
+        }
+
+        if (!includeCompose) return
+        record("menu tags") {
+            val tags = listOf("player-options", "player-speed-options", "player-speed-0.5", "player-speed-0.75",
+                "player-speed-1.0", "player-speed-1.25", "player-speed-1.5", "player-speed-2.0")
+            val nodes = compose.onAllNodes(SemanticsMatcher("Playback menu diagnostic tags") {
+                it.config.getOrElse(SemanticsProperties.TestTag) { "" } in tags
+            }, useUnmergedTree = true).fetchSemanticsNodes(atLeastOneRootRequired = false)
+            tags.joinToString { tag ->
+                val matches = nodes.filter { it.config.getOrElse(SemanticsProperties.TestTag) { "" } == tag }
+                "$tag=${matches.size}(focused=${matches.count { it.config.getOrElse(SemanticsProperties.Focused) { false } }})"
+            }
+        }
+
+        if (includeSemantics) record("all Compose roots, unmerged") {
+            val roots = compose.onAllNodes(isRoot(), useUnmergedTree = true)
+            val count = roots.fetchSemanticsNodes(atLeastOneRootRequired = false).size
+            "rootCount=$count\n" + (0 until count).joinToString("\n") { index ->
+                "root[$index]:\n${roots[index].printToString()}"
+            }
+        }
     }
 
     private fun awaitPlayerView(): PlayerView {
@@ -326,9 +644,26 @@ class RealActivityPlaybackInstrumentedTest {
             if (condition()) return
             Thread.sleep(50)
         }
-        throw AssertionError(message)
+        val failure = AssertionError(message)
+        try {
+            capturePlaybackDiagnostics("awaitState($message) failed; menuAttempt=$menuOpenAttempt", includeSemantics = true)
+        } catch (diagnosticFailure: Throwable) {
+            failure.addSuppressed(diagnosticFailure)
+        }
+        throw failure
     }
 
-    private fun key(code: Int) { instrumentation.sendKeyDownUpSync(code); compose.waitForIdle() }
+    private fun key(code: Int) {
+        // Exercise Android input routing with a virtual remote and fail if the OS rejects it.
+        val now = android.os.SystemClock.uptimeMillis()
+        val source = if (isTv) android.view.InputDevice.SOURCE_DPAD else android.view.InputDevice.SOURCE_KEYBOARD
+        for (action in intArrayOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+            val event = KeyEvent(now, android.os.SystemClock.uptimeMillis(), action, code, 0, 0,
+                android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0, KeyEvent.FLAG_FROM_SYSTEM, source)
+            val injected = instrumentation.uiAutomation.injectInputEvent(event, true)
+            assertTrue("Android must accept remote input key=$code action=$action", injected)
+        }
+        compose.waitForIdle()
+    }
     private fun onMain(block: () -> Unit) = instrumentation.runOnMainSync(block)
 }

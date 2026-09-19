@@ -1,5 +1,6 @@
 package play.ott.nativeapp
 
+import play.ott.nativeapp.i18n.AppLanguages
 import android.app.Application
 import android.net.Uri
 import android.os.Bundle
@@ -22,8 +23,53 @@ import play.ott.nativeapp.ui.AppUiState
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as OttplayApplication).repository
-    private val mutableState = MutableStateFlow(AppUiState(isBusy = true, loadingMessage = "Загрузка библиотеки"))
+    private fun message(id: Int, vararg args: Any) = AppLanguages.localizedContext(getApplication()).getString(id, *args)
+    private var loadingResource = R.string.message_loading_library
+    private var errorText: (() -> String)? = null
+    private var noticeText: (() -> String)? = null
+    private val mutableState = MutableStateFlow(AppUiState(isBusy = true, loadingMessage = message(loadingResource)))
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
+    private fun updateState(forceLocalization: Boolean = false, transform: (AppUiState) -> AppUiState) {
+        mutableState.update { old ->
+            val next = transform(old)
+            next.copy(sources = if (forceLocalization || next.sources !== old.sources) next.sources.map(repository::displaySource) else old.sources,
+                entries = if (forceLocalization || next.entries !== old.entries) next.entries.map(repository::displayEntry) else old.entries,
+                episodes = if (forceLocalization || next.episodes !== old.episodes) next.episodes.map(repository::displayEntry) else old.episodes,
+                playingEntry = if (forceLocalization || next.playingEntry !== old.playingEntry) next.playingEntry?.let(repository::displayEntry) else old.playingEntry,
+                epgEntry = if (forceLocalization || next.epgEntry !== old.epgEntry) next.epgEntry?.let(repository::displayEntry) else old.epgEntry,
+                seriesEntry = if (forceLocalization || next.seriesEntry !== old.seriesEntry) next.seriesEntry?.let(repository::displayEntry) else old.seriesEntry)
+        }
+    }
+
+    /** Activity recreation can retain this VM. Refresh labels without networking or touching playback. */
+    fun onLocaleChanged() {
+        updateState(forceLocalization = true) { it.copy(loadingMessage = message(loadingResource),
+            error = errorText?.invoke(), notice = noticeText?.invoke()) }
+        viewModelScope.launch {
+            try {
+                val sources = repository.sources()
+                updateState { it.copy(sources = sources) }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { /* Keep the already displayed catalogue if storage is temporarily unavailable. */ }
+        }
+    }
+
+    private fun setErrorText(text: () -> String) {
+        errorText = text
+        updateState { it.copy(error = text()) }
+    }
+
+    private fun setNoticeText(text: () -> String) {
+        noticeText = text
+        updateState { it.copy(notice = text()) }
+    }
+
+    private fun rememberCatalogNotes(catalog: Catalog) {
+        if (catalog.notes.isNotEmpty() || catalog.messages.isNotEmpty()) noticeText = {
+            repository.catalogNotes(catalog).joinToString("\n")
+        }
+    }
+
     private var controller: MediaController? = null
     private var loadJob: Job? = null
     private var detailJob: Job? = null
@@ -36,7 +82,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private data class PendingPlay(val entry: MediaEntry, val stream: PlaybackStream, val positionMs: Long)
     private val listener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
-            mutableState.update { it.copy(error = "Ошибка воспроизведения (" + error.errorCodeName + "). Попробуйте другой поток или повторите подключение.") }
+            setErrorText { play.ott.nativeapp.playback.PlaybackErrors.message(getApplication(), error) }
         }
         override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
             controller?.let { restorePlaybackEntry(it, item) }
@@ -45,7 +91,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     init {
         viewModelScope.launch {
             repository.preferences.data.collect { preferences ->
-                mutableState.update { it.copy(favoriteIds = preferences.favorites, backgroundPlayback = preferences.backgroundPlayback) }
+                updateState { it.copy(favoriteIds = preferences.favorites, backgroundPlayback = preferences.backgroundPlayback) }
             }
         }
         viewModelScope.launch {
@@ -53,11 +99,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val sources = repository.sources()
                 val selected = repository.preferences.data.first().selectedSourceId
                     ?.takeIf { id -> sources.any { it.id == id } } ?: sources.firstOrNull()?.id
-                mutableState.update { it.copy(sources = sources, selectedSourceId = selected, isBusy = false) }
+                updateState { it.copy(sources = sources, selectedSourceId = selected, isBusy = false) }
                 if (selected != null) load(selected, refresh = false)
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) {
-                mutableState.update { it.copy(isBusy = false, error = "Не удалось прочитать сохранённые источники. Данные не удалены.") }
+                updateState { it.copy(isBusy = false) }; setErrorText { message(R.string.message_saved_sources_unreadable) }
             }
         }
     }
@@ -81,7 +127,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun restorePlaybackEntry(value: MediaController, item: MediaItem?) {
         recoveryJob?.cancel()
         if (item == null) {
-            mutableState.update { it.copy(playingEntry = null) }
+            updateState { it.copy(playingEntry = null) }
             return
         }
         if (state.value.playingEntry?.id == item.mediaId) return
@@ -112,19 +158,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (recoveredSourceId != null && repository.sources().none { it.id == recoveredSourceId }) entry = null
                 ensureActive()
                 if (controller !== value || value.currentMediaItem?.mediaId != item.mediaId || generation != playGeneration) return@launch
-                mutableState.update { it.copy(playingEntry = entry) }
+                updateState { it.copy(playingEntry = entry) }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) {
                 if (controller === value && value.currentMediaItem?.mediaId == item.mediaId) {
-                    mutableState.update { it.copy(notice = "Не удалось восстановить описание текущего видео. Воспроизведение продолжается.") }
+                    setNoticeText { message(R.string.message_playback_description_unavailable) }
                 }
             }
         }
     }
 
-    fun onPlaybackSessionError() { mutableState.update { it.copy(error = "Не удалось переключить канал. Обновите источник и повторите попытку.") } }
+    fun onPlaybackSessionError() { setErrorText { message(R.string.message_channel_switch_failed) } }
 
-    fun onControllerFailure() { mutableState.update { it.copy(isBusy = false, error = "Не удалось подключиться к службе воспроизведения") } }
+    fun onControllerFailure() { updateState { it.copy(isBusy = false) }; setErrorText { message(R.string.message_controller_unavailable) } }
 
     fun dispatch(action: AppAction) {
         when (action) {
@@ -134,7 +180,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 loadJob?.cancelAndJoin()
                 repository.save(action.source)
                 val sources = repository.sources()
-                mutableState.update { it.copy(sources = sources) }
+                updateState { it.copy(sources = sources) }
                 load(action.source.id, true)
             }
             is AppAction.DeleteSource -> operation {
@@ -144,7 +190,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 repository.remove(action.sourceId)
                 val sources = repository.sources()
                 val id = state.value.selectedSourceId?.takeUnless { it == action.sourceId } ?: sources.firstOrNull()?.id
-                mutableState.update { it.copy(sources = sources, selectedSourceId = id, entries = emptyList(), isBusy = false) }
+                updateState { it.copy(sources = sources, selectedSourceId = id, entries = emptyList(), isBusy = false) }
                 if (id != null) load(id, false)
             }
             AppAction.Refresh -> state.value.selectedSourceId?.let { load(it, true) }
@@ -156,38 +202,38 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             is AppAction.Play -> play(action.entry)
             is AppAction.OpenEpg -> {
                 detailJob?.cancel()
-                mutableState.update { it.copy(epgEntry = action.entry, programmes = emptyList()) }
+                updateState { it.copy(epgEntry = action.entry, programmes = emptyList()) }
                 detailJob = operation {
                     val programmes = repository.programmes(action.entry)
-                    mutableState.update { if (it.epgEntry?.id == action.entry.id) it.copy(programmes = programmes) else it }
+                    updateState { if (it.epgEntry?.id == action.entry.id) it.copy(programmes = programmes) else it }
                 }
             }
             is AppAction.PlayProgramme -> {
                 val stream = CatchupResolver.resolve(action.entry, action.programme)
-                if (stream == null) mutableState.update { it.copy(error = "Архив для этой передачи недоступен у источника") }
+                if (stream == null) setErrorText { message(R.string.message_archive_unavailable) }
                 else play(action.entry.copy(id = action.entry.id + ":archive:" + action.programme.startMillis,
-                    name = action.programme.title, kind = MediaKind.MOVIE), stream)
+                    name = action.programme.title, nameMessage = null, kind = MediaKind.MOVIE), stream)
             }
             is AppAction.OpenSeries -> {
                 detailJob?.cancel()
-                mutableState.update { it.copy(seriesEntry = action.entry, episodes = emptyList()) }
+                updateState { it.copy(seriesEntry = action.entry, episodes = emptyList()) }
                 detailJob = operation {
                     val source = repository.sources().first { it.id == action.entry.sourceId }
                     val episodes = repository.providers.loadEpisodes(source, action.entry)
-                    mutableState.update { if (it.seriesEntry?.id == action.entry.id) it.copy(episodes = episodes) else it }
+                    updateState { if (it.seriesEntry?.id == action.entry.id) it.copy(episodes = episodes) else it }
                 }
             }
-            AppAction.CloseEpg -> { detailJob?.cancel(); mutableState.update { it.copy(epgEntry = null, programmes = emptyList()) } }
-            AppAction.CloseSeries -> { detailJob?.cancel(); mutableState.update { it.copy(seriesEntry = null, episodes = emptyList()) } }
-            AppAction.DismissError -> mutableState.update { it.copy(error = null) }
-            AppAction.DismissNotice -> mutableState.update { it.copy(notice = null) }
+            AppAction.CloseEpg -> { detailJob?.cancel(); updateState { it.copy(epgEntry = null, programmes = emptyList()) } }
+            AppAction.CloseSeries -> { detailJob?.cancel(); updateState { it.copy(seriesEntry = null, episodes = emptyList()) } }
+            AppAction.DismissError -> { errorText = null; updateState { it.copy(error = null) } }
+            AppAction.DismissNotice -> { noticeText = null; updateState { it.copy(notice = null) } }
             AppAction.StopPlayback -> stop()
             is AppAction.SetBackgroundPlayback -> operation { repository.preferences.update { it.copy(backgroundPlayback = action.enabled) } }
             AppAction.AddDemo -> operation {
                 val source = NativeRepository.demoSource()
                 repository.save(source)
                 val sources = repository.sources()
-                mutableState.update { it.copy(sources = sources) }
+                updateState { it.copy(sources = sources) }
                 load(source.id, true)
             }
             AppAction.ImportPlaylist, AppAction.ImportSettings, AppAction.ExportSettings -> Unit // System document launchers in Activity.
@@ -195,11 +241,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun load(id: String, refresh: Boolean) {
+        loadingResource = R.string.message_loading_catalog
+        errorText = null
         loadJob?.cancel()
         val generation = ++loadGeneration
         detailJob?.cancel()
-        mutableState.update { it.copy(selectedSourceId = id, entries = emptyList(), epgEntry = null,
-            seriesEntry = null, isBusy = true, loadingMessage = "Загрузка каталога", error = null) }
+        updateState { it.copy(selectedSourceId = id, entries = emptyList(), epgEntry = null,
+            seriesEntry = null, isBusy = true, loadingMessage = message(loadingResource), error = null) }
         loadJob = viewModelScope.launch {
             try {
                 repository.preferences.update { it.copy(selectedSourceId = id) }
@@ -209,29 +257,31 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     Catalog(emptyList())
                 }
                 if (state.value.selectedSourceId != id) return@launch
-                mutableState.update { it.copy(entries = cached.entries, notice = cached.notes.takeIf { notes -> notes.isNotEmpty() }?.joinToString("\n") ?: it.notice) }
+                rememberCatalogNotes(cached)
+                updateState { it.copy(entries = cached.entries, notice = noticeText?.invoke() ?: it.notice) }
                 val catalog = if (refresh || cached.entries.isEmpty()) repository.refresh(source) else cached
                 ensureActive()
                 if (state.value.selectedSourceId != id) return@launch
-                mutableState.update { it.copy(entries = catalog.entries, isBusy = false, notice = catalog.notes.takeIf { notes -> notes.isNotEmpty() }?.joinToString("\n") ?: it.notice) }
+                rememberCatalogNotes(catalog)
+                updateState { it.copy(entries = catalog.entries, isBusy = false, notice = noticeText?.invoke() ?: it.notice) }
                 if (refresh || cached.entries.isEmpty()) {
                     try {
                         repository.refreshEpg(source, catalog)
                     } catch (e: CancellationException) { throw e }
-                    catch (_: Exception) { mutableState.update {
-                        val epgNotice = "Каталог обновлён. EPG сейчас недоступна; сохранён предыдущий кэш."
-                        it.copy(notice = listOfNotNull(it.notice, epgNotice).distinct().joinToString("\n"))
-                    } }
+                    catch (_: Exception) {
+                        val previous = noticeText
+                        setNoticeText { listOfNotNull(previous?.invoke(), message(R.string.message_epg_unavailable)).distinct().joinToString("\n") }
+                    }
                 }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { showError(e) }
-            finally { if (generation == loadGeneration && state.value.selectedSourceId == id) mutableState.update { it.copy(isBusy = false) } }
+            finally { if (generation == loadGeneration && state.value.selectedSourceId == id) updateState { it.copy(isBusy = false) } }
         }
     }
 
     private fun play(entry: MediaEntry, resolved: PlaybackStream? = null) {
         if (entry.playbackUnsupportedReason != null) {
-            mutableState.update { it.copy(error = "Настройка DRM или формата этой записи не поддерживается. Текущее воспроизведение продолжается.") }
+            setErrorText { message(R.string.message_unsupported_playback) }
             return
         }
         if (entry.kind == MediaKind.SERIES) { dispatch(AppAction.OpenSeries(entry)); return }
@@ -249,7 +299,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val request = PendingPlay(entry, stream, position)
             if (controller == null) {
                 pending = request
-                mutableState.update { it.copy(playingEntry = entry, notice = "Подключение к службе воспроизведения") }
+                updateState { it.copy(playingEntry = entry) }; setNoticeText { message(R.string.message_connecting_playback) }
             } else begin(request)
         }
     }
@@ -258,7 +308,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val player = controller ?: return
         resolvingSourceId = null
         val item = PlaybackItems.build(
-            id = request.entry.id, title = request.entry.name, url = request.stream.url,
+            id = request.entry.id, title = repository.displayEntry(request.entry).name, url = request.stream.url,
             headers = request.stream.headers, artwork = request.entry.logo.takeIf { it.isNotBlank() },
             isLive = request.entry.kind == MediaKind.LIVE, startPositionMs = request.positionMs,
             drm = request.entry.drm, mimeType = request.entry.mimeType ?: request.stream.mimeType,
@@ -275,7 +325,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         player.setMediaItem(item, PlaybackItems.startPositionMs(item))
         player.prepare()
         player.play()
-        mutableState.update { it.copy(playingEntry = request.entry, error = null, notice = null) }
+        errorText = null; noticeText = null
+        updateState { it.copy(playingEntry = request.entry, error = null, notice = null) }
     }
 
     private fun retirePendingSource(sourceId: String) {
@@ -287,21 +338,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun stop() {
         playJob?.cancel(); ++playGeneration; pending = null; resolvingSourceId = null
         controller?.stop(); controller?.clearMediaItems()
-        mutableState.update { it.copy(playingEntry = null) }
+        updateState { it.copy(playingEntry = null) }
     }
 
     fun importPlaylist(uri: Uri, name: String) = operation {
         val source = NativeRepository.fileSource(uri.toString(), name)
         repository.save(source)
         val sources = repository.sources()
-        mutableState.update { it.copy(sources = sources) }
+        updateState { it.copy(sources = sources) }
         load(source.id, true)
     }
 
     fun importSettings(uri: Uri) = operation {
         val text = withContext(Dispatchers.IO) {
             getApplication<Application>().contentResolver.openInputStream(uri)?.use { play.ott.nativeapp.data.readBounded(it, 4 * 1024 * 1024).decodeToString() }
-                ?: error("Файл недоступен")
+                ?: error(message(R.string.message_file_unavailable))
         }
         // Import may replace accounts. A detached controller must not later start a URL resolved
         // with the previous credentials; currently playing media remains owned by the service.
@@ -312,7 +363,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         loadJob?.cancelAndJoin()
         val result = repository.importSettings(text)
         val sources = repository.sources()
-        mutableState.update { it.copy(sources = sources, notice = "Импортировано источников: " + result.count + if (result.notes.isEmpty()) "" else ". " + result.notes.joinToString(" ")) }
+        updateState { it.copy(sources = sources) }
+        setNoticeText { listOf(message(R.string.message_imported_sources, result.count))
+            .plus(repository.importNotes(result)).joinToString(". ") }
         val selected = repository.preferences.data.first().selectedSourceId
         (sources.firstOrNull { it.id == selected } ?: sources.firstOrNull())?.let { load(it.id, false) }
     }
@@ -321,9 +374,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val text = repository.exportSettings()
         withContext(Dispatchers.IO) {
             getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(text) }
-                ?: error("Не удалось записать файл")
+                ?: error(message(R.string.message_file_write_failed))
         }
-        mutableState.update { it.copy(notice = "Настройки экспортированы. Файл содержит адреса и учётные данные источников.") }
+        setNoticeText { message(R.string.message_export_complete) }
     }
 
     private fun operation(block: suspend CoroutineScope.() -> Unit): Job = viewModelScope.launch {
@@ -334,12 +387,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun showError(error: Exception) {
         // Network/library exception messages may contain provider URLs and credentials.
-        val message = when (error) {
-            is java.net.UnknownHostException -> "Сервер не найден. Проверьте адрес и подключение."
-            is java.net.SocketTimeoutException -> "Сервер не ответил вовремя. Попробуйте обновить источник."
-            else -> "Не удалось выполнить операцию. Проверьте адрес, учётные данные и формат источника; сохранённые данные не удалены."
+        val resource = when (error) {
+            is java.net.UnknownHostException -> R.string.message_host_not_found
+            is java.net.SocketTimeoutException -> R.string.message_network_timeout
+            else -> R.string.message_operation_failed
         }
-        mutableState.update { it.copy(error = message, isBusy = false) }
+        updateState { it.copy(isBusy = false) }
+        setErrorText { message(resource) }
     }
 
     private companion object {

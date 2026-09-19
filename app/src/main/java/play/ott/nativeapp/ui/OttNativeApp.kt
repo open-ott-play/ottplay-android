@@ -2,6 +2,7 @@ package play.ott.nativeapp.ui
 
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -71,22 +73,31 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.media3.session.MediaController
 import coil.compose.AsyncImage
+import play.ott.nativeapp.R
 import play.ott.nativeapp.core.MediaEntry
 import play.ott.nativeapp.core.MediaKind
 import play.ott.nativeapp.core.SourceConfig
+import play.ott.nativeapp.i18n.AppLanguages
 import kotlinx.coroutines.launch
 
-private enum class LibraryTab(val title: String, val heading: String) {
-    LIVE("Эфир", "Телеканалы"), MOVIES("Фильмы", "Кино на ваш вечер"),
-    SERIES("Сериалы", "Следующая история"), FAVORITES("Избранное", "Всегда под рукой"),
+private enum class LibraryTab(@param:StringRes val title: Int, @param:StringRes val heading: Int) {
+    LIVE(R.string.library_tab_live, R.string.library_heading_live),
+    MOVIES(R.string.library_tab_movies, R.string.library_heading_movies),
+    SERIES(R.string.library_tab_series, R.string.library_heading_series),
+    FAVORITES(R.string.library_tab_favorites, R.string.library_heading_favorites),
 }
 
 @Composable
@@ -100,6 +111,7 @@ fun OttNativeApp(
 ) {
     val configuration = LocalConfiguration.current
     val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+    val keyToCatalog = if (LocalLayoutDirection.current == LayoutDirection.Rtl) Key.DirectionLeft else Key.DirectionRight
     var tab by rememberSaveable { mutableStateOf(LibraryTab.LIVE) }
     var search by rememberSaveable { mutableStateOf("") }
     var group by rememberSaveable(state.selectedSourceId, tab) { mutableStateOf("") }
@@ -124,6 +136,11 @@ fun OttNativeApp(
         }
     }
     val groups = remember(tabEntries) { tabEntries.map { it.group }.filter { it.isNotBlank() }.distinct().sorted() }
+    LaunchedEffect(groups, state.isBusy) {
+        // Generated group labels change with the app language. Keep existing provider filters,
+        // but do not let a saved, obsolete label hide the newly localized catalog.
+        if (!state.isBusy && tabEntries.isNotEmpty() && group.isNotBlank() && group !in groups) group = ""
+    }
     val visibleEntries = remember(tabEntries, search, group) {
         tabEntries.filter { (group.isBlank() || it.group == group) && (search.isBlank() || it.name.contains(search, ignoreCase = true) || it.group.contains(search, ignoreCase = true)) }
     }
@@ -173,7 +190,7 @@ fun OttNativeApp(
         if (fullscreen) fullscreen = false else onAction(AppAction.StopPlayback)
     }
     OttTheme {
-        Surface(modifier = Modifier.fillMaxSize().then(if (inPictureInPicture) Modifier else Modifier.safeDrawingPadding()), color = MaterialTheme.colorScheme.background) {
+        Surface(modifier = Modifier.tvRemoteInput().fillMaxSize().then(if (inPictureInPicture) Modifier else Modifier.safeDrawingPadding()), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize()) {
                 if ((fullscreen || inPictureInPicture) && state.playingEntry != null) {
                     NativePlayerPane(state.playingEntry, controller, true, { fullscreen = false }, onPictureInPicture,
@@ -187,11 +204,11 @@ fun OttNativeApp(
                                     Brand()
                                     Spacer(Modifier.height(18.dp))
                                     LibraryTab.entries.forEach { option ->
-                                        ActionButton(option.title, { tab = option }, Modifier.fillMaxWidth()
+                                        ActionButton(stringResource(option.title), { tab = option }, Modifier.fillMaxWidth()
                                             .testTag("library-tab-${option.name}")
                                             .then(if (tab == option) Modifier.focusRequester(railFocus) else Modifier)
                                             .onPreviewKeyEvent { event ->
-                                                if (isTv && event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight &&
+                                                if (isTv && event.type == KeyEventType.KeyDown && event.key == keyToCatalog &&
                                                     (state.sources.isEmpty() || focusEntryId != null)) {
                                                     if (event.nativeKeyEvent.repeatCount == 0) {
                                                         if (state.sources.isEmpty()) welcomeFocus.requestFocus()
@@ -208,17 +225,17 @@ fun OttNativeApp(
                                             }, selected = tab == option)
                                     }
                                     Spacer(Modifier.weight(1f))
-                                    Text("БИБЛИОТЕКА", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    ActionButton("Источники", { showSources = true }, Modifier.fillMaxWidth())
-                                    ActionButton("Настройки", { showSettings = true }, Modifier.fillMaxWidth())
+                                    Text(stringResource(R.string.library_section_label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    ActionButton(stringResource(R.string.library_sources), { showSources = true }, Modifier.fillMaxWidth())
+                                    ActionButton(stringResource(R.string.library_settings), { showSettings = true }, Modifier.fillMaxWidth().testTag("open-settings"))
                                 }
                             }
                             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 if (!wide) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Box(Modifier.weight(1f)) { Brand() }
-                                        ActionButton("Источники", { showSources = true }, compact = true)
-                                        ActionButton("Ещё", { showSettings = true }, compact = true)
+                                        ActionButton(stringResource(R.string.library_sources), { showSources = true }, compact = true)
+                                        ActionButton(stringResource(R.string.library_more), { showSettings = true }, Modifier.testTag("open-settings"), compact = true)
                                     }
                                 }
                                 if (state.sources.isEmpty()) {
@@ -231,36 +248,36 @@ fun OttNativeApp(
                                         initialFocus = welcomeFocus,
                                     )
                                 } else {
-                                    LibraryHeader(tab.heading, selectedSource, state.sources, onAction, state.isBusy)
+                                    LibraryHeader(stringResource(tab.heading), selectedSource, state.sources, onAction, state.isBusy)
                                     state.playingEntry?.let { entry ->
                                         Card(onClick = { fullscreen = true }, modifier = Modifier.testTag("now-playing-bar"), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                                             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f)) {
-                                                    Text("СЕЙЧАС ИГРАЕТ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                                    Text(stringResource(R.string.library_now_playing), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                                     Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                                                 }
-                                                ActionButton("Открыть", { fullscreen = true }, compact = true)
+                                                ActionButton(stringResource(R.string.library_open), { fullscreen = true }, compact = true)
                                             }
                                         }
                                     }
                                     if (!wide) {
                                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             items(LibraryTab.entries) { option ->
-                                                ActionButton(option.title, { tab = option }, selected = tab == option, compact = true)
+                                                ActionButton(stringResource(option.title), { tab = option }, selected = tab == option, compact = true)
                                             }
                                         }
                                     }
                                     OutlinedTextField(
                                         value = search, onValueChange = { search = it }, singleLine = true,
-                                        placeholder = { Text("Поиск по названию или группе") },
-                                        label = { Text("Поиск") },
-                                        trailingIcon = { if (search.isNotEmpty()) TextButton(onClick = { search = "" }) { Text("Сброс") } },
+                                        placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
+                                        label = { Text(stringResource(R.string.library_search)) },
+                                        trailingIcon = { if (search.isNotEmpty()) TextButton(onClick = { search = "" }) { Text(stringResource(R.string.library_clear)) } },
                                         shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
                                     )
                                     if (groups.isNotEmpty()) {
                                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            item { FilterChip(selected = group.isBlank(), onClick = { group = "" }, label = { Text("Все группы") }) }
-                                            items(groups) { name -> FilterChip(selected = group == name, onClick = { group = name }, label = { Text(name) }) }
+                                            item { FilterChip(selected = group.isBlank(), onClick = { group = "" }, label = { Text(stringResource(R.string.library_all_groups)) }) }
+                                            items(groups) { name -> FilterChip(selected = group == name, onClick = { group = name }, label = { Text(name) }, modifier = Modifier.testTag("library-group-$name")) }
                                         }
                                     }
                                     if (state.isBusy) {
@@ -268,8 +285,8 @@ fun OttNativeApp(
                                         if (state.loadingMessage.isNotBlank()) Text(state.loadingMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("${visibleEntries.size} ${entryCountWord(visibleEntries.size)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        if (isTv) Text("Пульт: стрелки · ОК · Назад", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(pluralStringResource(R.plurals.library_entry_count, visibleEntries.size, visibleEntries.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        if (isTv) Text(stringResource(R.string.library_remote_hint), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     if (visibleEntries.isEmpty()) {
                                         EmptyLibrary(tab, search.isNotEmpty() || group.isNotEmpty(), state.isBusy,
@@ -314,10 +331,11 @@ fun OttNativeApp(
         state.seriesEntry?.let { SeriesDialog(it, state.episodes, state.isBusy, onAction) }
         state.error?.let { message ->
             AlertDialog(
+                modifier = Modifier.tvRemoteInput(),
                 onDismissRequest = { onAction(AppAction.DismissError) },
-                title = { Text("Не удалось завершить действие") },
+                title = { Text(stringResource(R.string.library_action_failed)) },
                 text = { Text(message) },
-                confirmButton = { ActionButton("Понятно", { onAction(AppAction.DismissError) }, selected = true) },
+                confirmButton = { ActionButton(stringResource(R.string.library_understood), { onAction(AppAction.DismissError) }, selected = true) },
             )
         }
     }
@@ -327,11 +345,11 @@ fun OttNativeApp(
 private fun Brand() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.size(32.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-            Text("▶", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.library_brand_icon), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
         }
         Column {
-            Text("OTT PLAY", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-            Text("Ваш эфир. Ваш выбор.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.library_brand_name), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+            Text(stringResource(R.string.library_brand_tagline), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -343,14 +361,14 @@ private fun LibraryHeader(title: String, source: SourceConfig?, sources: List<So
         Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) {
-                ActionButton(source?.name ?: "Выбрать источник", { menuOpen = true }, Modifier.fillMaxWidth(), compact = true)
+                ActionButton(source?.name ?: stringResource(R.string.library_choose_source), { menuOpen = true }, Modifier.fillMaxWidth(), compact = true)
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     sources.forEach { candidate ->
                         DropdownMenuItem(text = { Text(candidate.name) }, onClick = { onAction(AppAction.SelectSource(candidate.id)); menuOpen = false })
                     }
                 }
             }
-            ActionButton("Обновить", { onAction(AppAction.Refresh) }, enabled = !loading, compact = true)
+            ActionButton(stringResource(R.string.library_refresh), { onAction(AppAction.Refresh) }, enabled = !loading, compact = true)
         }
     }
 }
@@ -358,32 +376,32 @@ private fun LibraryHeader(title: String, source: SourceConfig?, sources: List<So
 @Composable
 private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit, onDemo: () -> Unit, onPrivacy: () -> Unit, initialFocus: FocusRequester) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.Start) {
-        Text("ДОБРО ПОЖАЛОВАТЬ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(stringResource(R.string.library_welcome_label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(20.dp))
-        Text("Весь ваш эфир.\nНа любом экране.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.library_welcome_heading), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
-        Text("Добавьте плейлист M3U или подключите аккаунт Xtream / Stalker. Каналы, фильмы, сериалы и телепрограмма появятся здесь.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.library_welcome_description), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(28.dp))
-        ActionButton("Добавить источник", onAdd, Modifier.focusRequester(initialFocus).testTag("welcome-add-source"), selected = true)
+        ActionButton(stringResource(R.string.library_add_source), onAdd, Modifier.focusRequester(initialFocus).testTag("welcome-add-source"), selected = true)
         Spacer(Modifier.height(8.dp))
-        ActionButton("Открыть файл M3U", onImport)
+        ActionButton(stringResource(R.string.library_open_m3u), onImport)
         Spacer(Modifier.height(8.dp))
-        ActionButton("Попробовать демо", onDemo)
+        ActionButton(stringResource(R.string.library_try_demo), onDemo)
         Spacer(Modifier.height(20.dp))
-        Text("Для демо не нужен аккаунт. Вы сможете удалить источник в любой момент.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.library_demo_description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
-        ActionButton("Политика конфиденциальности", onPrivacy, Modifier.testTag("welcome-privacy"), compact = true)
+        ActionButton(stringResource(R.string.library_privacy_policy), onPrivacy, Modifier.testTag("welcome-privacy"), compact = true)
     }
 }
 
 @Composable
 private fun EmptyLibrary(tab: LibraryTab, filtered: Boolean, loading: Boolean, onClear: () -> Unit, onRefresh: () -> Unit, modifier: Modifier) {
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text(when { loading -> "Загружаем библиотеку…"; filtered -> "Ничего не найдено"; tab == LibraryTab.FAVORITES -> "Ваше избранное появится здесь"; else -> "В этом разделе пока пусто" }, style = MaterialTheme.typography.titleMedium)
+        Text(when { loading -> stringResource(R.string.library_loading); filtered -> stringResource(R.string.library_nothing_found); tab == LibraryTab.FAVORITES -> stringResource(R.string.library_favorites_empty); else -> stringResource(R.string.library_section_empty) }, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
-        Text(when { filtered -> "Попробуйте другое название или группу."; tab == LibraryTab.FAVORITES -> "Добавляйте каналы и фильмы кнопкой «В избранное»."; else -> "Проверьте источник или обновите каталог." }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-        if (!loading && filtered) ActionButton("Сбросить фильтры", onClear, Modifier.padding(top = 16.dp))
-        if (!loading && !filtered && tab != LibraryTab.FAVORITES) ActionButton("Обновить", onRefresh, Modifier.padding(top = 16.dp))
+        Text(when { filtered -> stringResource(R.string.library_search_suggestion); tab == LibraryTab.FAVORITES -> stringResource(R.string.library_favorites_suggestion); else -> stringResource(R.string.library_refresh_suggestion) }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        if (!loading && filtered) ActionButton(stringResource(R.string.library_clear_filters), onClear, Modifier.padding(top = 16.dp))
+        if (!loading && !filtered && tab != LibraryTab.FAVORITES) ActionButton(stringResource(R.string.library_refresh), onRefresh, Modifier.padding(top = 16.dp))
     }
 }
 
@@ -391,6 +409,10 @@ private fun EmptyLibrary(tab: LibraryTab, filtered: Boolean, loading: Boolean, o
 internal fun MediaCard(entry: MediaEntry, favorite: Boolean, playing: Boolean, onAction: (AppAction) -> Unit, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(18.dp)
+    val favoriteDescription = stringResource(
+        if (favorite) R.string.library_favorite_remove_description else R.string.library_favorite_add_description,
+        entry.name,
+    )
     Card(
         onClick = { onAction(if (entry.kind == MediaKind.SERIES) AppAction.OpenSeries(entry) else AppAction.Play(entry)) },
         modifier = modifier.fillMaxWidth().testTag("catalog-item-${entry.id}").onFocusChanged { focused = it.isFocused }
@@ -405,13 +427,13 @@ internal fun MediaCard(entry: MediaEntry, favorite: Boolean, playing: Boolean, o
         ) {
             Text(entry.name.take(2).uppercase(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
             if (entry.logo.isNotBlank()) AsyncImage(entry.logo, contentDescription = null, modifier = Modifier.fillMaxSize().padding(12.dp), contentScale = ContentScale.Fit)
-            if (playing) Text("СЕЙЧАС ИГРАЕТ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.align(Alignment.BottomStart).background(MaterialTheme.colorScheme.background.copy(alpha = .85f)).padding(6.dp))
+            if (playing) Text(stringResource(R.string.library_now_playing), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.align(Alignment.BottomStart).background(MaterialTheme.colorScheme.background.copy(alpha = .85f)).padding(6.dp))
         }
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(entry.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(entry.group.ifBlank { if (entry.kind == MediaKind.LIVE) "Прямой эфир" else "Видео" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            ActionButton(if (favorite) "В избранном ✓" else "В избранное", { onAction(AppAction.ToggleFavorite(entry)) }, Modifier.fillMaxWidth().semantics { contentDescription = if (favorite) "Удалить ${entry.name} из избранного" else "Добавить ${entry.name} в избранное" }, compact = true, selected = favorite)
-            if (entry.kind == MediaKind.LIVE) ActionButton("Телепрограмма", { onAction(AppAction.OpenEpg(entry)) }, Modifier.fillMaxWidth(), compact = true)
+            Text(entry.group.ifBlank { if (entry.kind == MediaKind.LIVE) stringResource(R.string.library_live_video) else stringResource(R.string.library_video) }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            ActionButton(if (favorite) stringResource(R.string.library_favorite_selected) else stringResource(R.string.library_favorite_add), { onAction(AppAction.ToggleFavorite(entry)) }, Modifier.fillMaxWidth().semantics { contentDescription = favoriteDescription }, compact = true, selected = favorite)
+            if (entry.kind == MediaKind.LIVE) ActionButton(stringResource(R.string.library_tv_guide), { onAction(AppAction.OpenEpg(entry)) }, Modifier.fillMaxWidth(), compact = true)
         }
     }
 }
@@ -420,35 +442,37 @@ internal fun MediaCard(entry: MediaEntry, favorite: Boolean, playing: Boolean, o
 private fun SourcesDialog(state: AppUiState, onAction: (AppAction) -> Unit, onDismiss: () -> Unit, onEdit: (SourceConfig?) -> Unit) {
     var deleting by remember { mutableStateOf<SourceConfig?>(null) }
     AlertDialog(
+        modifier = Modifier.tvRemoteInput(),
         onDismissRequest = onDismiss,
-        title = { Text("Источники") },
+        title = { Text(stringResource(R.string.library_sources)) },
         text = {
             LazyColumn(Modifier.heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (state.sources.isEmpty()) item { Text("Добавьте плейлист или аккаунт провайдера.") }
+                if (state.sources.isEmpty()) item { Text(stringResource(R.string.library_sources_empty)) }
                 items(state.sources, key = { it.id }) { source ->
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(source.name, style = MaterialTheme.typography.titleMedium)
-                        Text(source.kind.label() + if (source.id == state.selectedSourceId) " · выбран" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (source.id == state.selectedSourceId) stringResource(R.string.library_source_selected, source.kind.label()) else source.kind.label(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ActionButton("Выбрать", { onAction(AppAction.SelectSource(source.id)); onDismiss() }, Modifier.weight(1f), compact = true)
-                            ActionButton("Изменить", { onEdit(source) }, Modifier.weight(1f), compact = true)
+                            ActionButton(stringResource(R.string.library_select), { onAction(AppAction.SelectSource(source.id)); onDismiss() }, Modifier.weight(1f), compact = true)
+                            ActionButton(stringResource(R.string.library_edit), { onEdit(source) }, Modifier.weight(1f), compact = true)
                         }
-                        TextButton(onClick = { deleting = source }) { Text("Удалить источник", color = MaterialTheme.colorScheme.error) }
+                        TextButton(onClick = { deleting = source }) { Text(stringResource(R.string.library_delete_source), color = MaterialTheme.colorScheme.error) }
                         HorizontalDivider()
                     }
                 }
-                item { ActionButton("Добавить по ссылке", { onEdit(null) }, Modifier.fillMaxWidth(), selected = true) }
-                item { ActionButton("Открыть файл M3U", { onAction(AppAction.ImportPlaylist); onDismiss() }, Modifier.fillMaxWidth()) }
+                item { ActionButton(stringResource(R.string.library_add_by_url), { onEdit(null) }, Modifier.fillMaxWidth(), selected = true) }
+                item { ActionButton(stringResource(R.string.library_open_m3u), { onAction(AppAction.ImportPlaylist); onDismiss() }, Modifier.fillMaxWidth()) }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Готово") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.library_done)) } },
     )
     deleting?.let { source ->
         AlertDialog(
-            onDismissRequest = { deleting = null }, title = { Text("Удалить ${source.name}?") },
-            text = { Text("Источник и его настройки будут удалены из приложения.") },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } },
-            confirmButton = { ActionButton("Удалить", { onAction(AppAction.DeleteSource(source.id)); deleting = null }) },
+            modifier = Modifier.tvRemoteInput(),
+            onDismissRequest = { deleting = null }, title = { Text(stringResource(R.string.library_delete_source_title, source.name)) },
+            text = { Text(stringResource(R.string.library_delete_source_description)) },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.library_cancel)) } },
+            confirmButton = { ActionButton(stringResource(R.string.library_delete), { onAction(AppAction.DeleteSource(source.id)); deleting = null }) },
         )
     }
 }
@@ -457,37 +481,97 @@ private fun SourcesDialog(state: AppUiState, onAction: (AppAction) -> Unit, onDi
 private fun SettingsDialog(state: AppUiState, onAction: (AppAction) -> Unit, onPrivacy: () -> Unit, onDismiss: () -> Unit) {
     val configuration = LocalConfiguration.current
     val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+    var languageTag by remember(configuration) { mutableStateOf(AppLanguages.currentTag()) }
+    var showLanguages by rememberSaveable { mutableStateOf(false) }
+    var restoreLanguageFocus by rememberSaveable { mutableStateOf(false) }
+    val languageFocus = remember { FocusRequester() }
+    if (showLanguages) {
+        LanguageDialog(
+            languageTag,
+            onSelect = { tag ->
+                showLanguages = false
+                restoreLanguageFocus = isTv
+                languageTag = tag
+                AppLanguages.setLanguage(tag)
+            },
+            onDismiss = { showLanguages = false; restoreLanguageFocus = isTv },
+        )
+        return
+    }
+    LaunchedEffect(isTv, restoreLanguageFocus) {
+        if (isTv && restoreLanguageFocus) {
+            withFrameNanos { }
+            languageFocus.requestFocus()
+            restoreLanguageFocus = false
+        }
+    }
+    val languageName = AppLanguages.supported.firstOrNull { it.tag == languageTag }?.nativeName
+        ?: stringResource(R.string.library_language_system)
+    val backgroundPlaybackDescription = stringResource(R.string.library_background_playback)
     AlertDialog(
+        modifier = Modifier.tvRemoteInput(),
         onDismissRequest = onDismiss,
-        title = { Text("Настройки") },
+        title = { Text(stringResource(R.string.library_settings)) },
         text = {
             Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(stringResource(R.string.library_language), style = MaterialTheme.typography.titleSmall)
+                ActionButton(languageName, { showLanguages = true },
+                    Modifier.fillMaxWidth().focusRequester(languageFocus).testTag("settings-language"))
+                HorizontalDivider()
                 if (!isTv) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Column(Modifier.weight(1f)) {
-                            Text("Фоновое воспроизведение", style = MaterialTheme.typography.titleSmall)
-                            Text("Продолжать звук при сворачивании приложения", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.library_background_playback), style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.library_background_description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Switch(checked = state.backgroundPlayback, onCheckedChange = { onAction(AppAction.SetBackgroundPlayback(it)) }, modifier = Modifier.semantics { contentDescription = "Фоновое воспроизведение" })
+                        Switch(checked = state.backgroundPlayback, onCheckedChange = { onAction(AppAction.SetBackgroundPlayback(it)) }, modifier = Modifier.semantics { contentDescription = backgroundPlaybackDescription })
                     }
                     HorizontalDivider()
                 }
-                Text("Резервная копия", style = MaterialTheme.typography.titleSmall)
-                Text("Настройки источников могут содержать пароли. Сохраните файл в надёжном месте.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ActionButton("Экспортировать настройки", { onAction(AppAction.ExportSettings); onDismiss() }, Modifier.fillMaxWidth())
-                ActionButton("Импортировать настройки", { onAction(AppAction.ImportSettings); onDismiss() }, Modifier.fillMaxWidth())
-                ActionButton("Добавить демоисточник", { onAction(AppAction.AddDemo); onDismiss() }, Modifier.fillMaxWidth())
+                Text(stringResource(R.string.library_backup), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.library_backup_description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ActionButton(stringResource(R.string.library_export_settings), { onAction(AppAction.ExportSettings); onDismiss() }, Modifier.fillMaxWidth())
+                ActionButton(stringResource(R.string.library_import_settings), { onAction(AppAction.ImportSettings); onDismiss() }, Modifier.fillMaxWidth())
+                ActionButton(stringResource(R.string.library_add_demo), { onAction(AppAction.AddDemo); onDismiss() }, Modifier.fillMaxWidth())
                 HorizontalDivider()
-                ActionButton("Политика конфиденциальности", onPrivacy, Modifier.fillMaxWidth().testTag("settings-privacy"))
+                ActionButton(stringResource(R.string.library_privacy_policy), onPrivacy, Modifier.fillMaxWidth().testTag("settings-privacy"))
             }
         },
-        confirmButton = { ActionButton("Готово", onDismiss, selected = true) },
+        confirmButton = { ActionButton(stringResource(R.string.library_done), onDismiss, selected = true) },
     )
 }
 
-private fun entryCountWord(count: Int): String = when {
-    count % 100 in 11..14 -> "записей"
-    count % 10 == 1 -> "запись"
-    count % 10 in 2..4 -> "записи"
-    else -> "записей"
+@Composable
+private fun LanguageDialog(languageTag: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    val configuration = LocalConfiguration.current
+    val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+    val options = listOf("" to stringResource(R.string.library_language_system)) +
+        AppLanguages.supported.map { it.tag to it.nativeName }
+    val selectedIndex = options.indexOfFirst { it.first == languageTag }.coerceAtLeast(0)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
+    val selectedFocus = remember { FocusRequester() }
+    LaunchedEffect(isTv) {
+        if (isTv) {
+            withFrameNanos { }
+            selectedFocus.requestFocus()
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.tvRemoteInput().testTag("language-dialog"),
+        title = { Text(stringResource(R.string.library_language)) },
+        text = {
+            LazyColumn(state = listState, modifier = Modifier.heightIn(max = 480.dp).testTag("language-list"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(options, key = { it.first }) { (tag, name) ->
+                    val isSelected = tag == languageTag
+                    ActionButton(name, { onSelect(tag) },
+                        Modifier.fillMaxWidth().testTag("language-${tag.ifEmpty { "system" }}")
+                            .then(if (isSelected) Modifier.focusRequester(selectedFocus) else Modifier)
+                            .semantics { selected = isSelected },
+                        selected = isSelected)
+                }
+            }
+        },
+        confirmButton = { ActionButton(stringResource(R.string.library_done), onDismiss) },
+    )
 }

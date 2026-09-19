@@ -20,6 +20,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
+import play.ott.nativeapp.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,35 +41,38 @@ import play.ott.nativeapp.core.MediaEntry
 import play.ott.nativeapp.core.Programme
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
+import androidx.compose.ui.platform.LocalConfiguration
 
 @Composable
 internal fun GuideDialog(entry: MediaEntry, programmes: List<Programme>, loading: Boolean, onAction: (AppAction) -> Unit) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = System.currentTimeMillis() } }
     val ordered = remember(programmes) { programmes.sortedBy { it.startMillis } }
-    val formatter = remember { SimpleDateFormat("EEE, d MMM · HH:mm", Locale("ru")) }
-    val timeFormatter = remember { SimpleDateFormat("HH:mm", Locale("ru")) }
+    val locale = LocalConfiguration.current.locales[0]
+    val startFormat = stringResource(R.string.dialog_programme_start_format)
+    val endFormat = stringResource(R.string.dialog_programme_end_format)
+    val formatter = remember(locale, startFormat) { SimpleDateFormat(startFormat, locale) }
+    val timeFormatter = remember(locale, endFormat) { SimpleDateFormat(endFormat, locale) }
     val initialIndex = remember(entry.id, ordered) {
         ordered.indexOfFirst { it.endMillis > System.currentTimeMillis() }.coerceAtLeast(0)
     }
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
     LaunchedEffect(entry.id, ordered) { if (ordered.isNotEmpty()) scroll.scrollToItem(initialIndex) }
     Dialog(onDismissRequest = { onAction(AppAction.CloseEpg) }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxWidth(.94f).widthIn(max = 860.dp).fillMaxHeight(.91f), shape = RoundedCornerShape(24.dp)) {
+        Surface(Modifier.tvRemoteInput().fillMaxWidth(.94f).widthIn(max = 860.dp).fillMaxHeight(.91f), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text("ТЕЛЕПРОГРАММА", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.dialog_guide), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         Text(entry.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     }
-                    ActionButton("Закрыть", { onAction(AppAction.CloseEpg) }, compact = true)
+                    ActionButton(stringResource(R.string.dialog_close), { onAction(AppAction.CloseEpg) }, compact = true)
                 }
-                ActionButton("Смотреть прямой эфир", { onAction(AppAction.Play(entry)); onAction(AppAction.CloseEpg) }, selected = true)
+                ActionButton(stringResource(R.string.dialog_watch_live), { onAction(AppAction.Play(entry)); onAction(AppAction.CloseEpg) }, selected = true)
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (ordered.isEmpty() && !loading) {
-                    Text("Для этого канала нет телепрограммы.", style = MaterialTheme.typography.titleMedium)
-                    Text("Проверьте XMLTV-адрес источника и идентификатор канала в плейлисте.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.dialog_guide_empty), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.dialog_guide_empty_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 LazyColumn(state = scroll, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(ordered) { programme ->
@@ -79,10 +84,10 @@ internal fun GuideDialog(entry: MediaEntry, programmes: List<Programme>, loading
                         ProgrammeCard(
                             title = programme.title,
                             description = programme.description,
-                            time = formatter.format(Date(programme.startMillis)) + " – " + timeFormatter.format(Date(programme.endMillis)),
-                            status = when { live -> "СЕЙЧАС В ЭФИРЕ"; replayable -> "ДОСТУПНО В АРХИВЕ"; past -> "ЭФИР ЗАВЕРШЁН"; else -> "СКОРО" },
+                            time = stringResource(R.string.dialog_programme_range, formatter.format(Date(programme.startMillis)), timeFormatter.format(Date(programme.endMillis))),
+                            status = when { live -> stringResource(R.string.dialog_programme_live); replayable -> stringResource(R.string.dialog_programme_archive); past -> stringResource(R.string.dialog_programme_ended); else -> stringResource(R.string.dialog_programme_soon) },
                             live = live,
-                            actionLabel = when { live -> "Смотреть"; replayable -> "Смотреть из архива"; else -> null },
+                            actionLabel = when { live -> stringResource(R.string.dialog_watch); replayable -> stringResource(R.string.dialog_watch_archive); else -> null },
                             onClick = {
                                 if (live) onAction(AppAction.Play(entry)) else onAction(AppAction.PlayProgramme(entry, programme))
                                 onAction(AppAction.CloseEpg)
@@ -116,21 +121,21 @@ private fun ProgrammeCard(title: String, description: String, time: String, stat
 internal fun SeriesDialog(entry: MediaEntry, episodes: List<MediaEntry>, loading: Boolean, onAction: (AppAction) -> Unit) {
     val ordered = remember(episodes) { episodes.sortedWith(compareBy({ it.season ?: 0 }, { it.episode ?: 0 }, { it.name })) }
     Dialog(onDismissRequest = { onAction(AppAction.CloseSeries) }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxWidth(.94f).widthIn(max = 860.dp).fillMaxHeight(.91f), shape = RoundedCornerShape(24.dp)) {
+        Surface(Modifier.tvRemoteInput().fillMaxWidth(.94f).widthIn(max = 860.dp).fillMaxHeight(.91f), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text("СЕРИАЛ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.dialog_series), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         Text(entry.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     }
-                    ActionButton("Закрыть", { onAction(AppAction.CloseSeries) }, compact = true)
+                    ActionButton(stringResource(R.string.dialog_close), { onAction(AppAction.CloseSeries) }, compact = true)
                 }
                 if (entry.description.isNotBlank()) Text(entry.description, style = MaterialTheme.typography.bodyMedium, maxLines = 4, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (ordered.isEmpty() && !loading) Text("У провайдера нет доступных серий.")
+                if (ordered.isEmpty() && !loading) Text(stringResource(R.string.dialog_series_empty))
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ordered.groupBy { it.season ?: 1 }.forEach { (season, entries) ->
-                        item { Text("Сезон $season", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp)) }
+                        item { Text(stringResource(R.string.dialog_season, season), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp)) }
                         items(entries, key = { it.id }) { episode ->
                             var focused by remember { mutableStateOf(false) }
                             val shape = RoundedCornerShape(16.dp)
@@ -142,11 +147,11 @@ internal fun SeriesDialog(entry: MediaEntry, episodes: List<MediaEntry>, loading
                             ) {
                                 Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Column(Modifier.weight(1f)) {
-                                        episode.episode?.let { Text("Серия $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary) }
+                                        episode.episode?.let { Text(stringResource(R.string.dialog_episode, it), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary) }
                                         Text(episode.name, style = MaterialTheme.typography.titleMedium)
                                         if (episode.description.isNotBlank()) Text(episode.description, style = MaterialTheme.typography.bodySmall, maxLines = 3, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
-                                    ActionButton("Смотреть", { onAction(AppAction.Play(episode)); onAction(AppAction.CloseSeries) }, compact = true)
+                                    ActionButton(stringResource(R.string.dialog_watch), { onAction(AppAction.Play(episode)); onAction(AppAction.CloseSeries) }, compact = true)
                                 }
                             }
                         }

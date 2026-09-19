@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
+import play.ott.nativeapp.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -66,6 +68,9 @@ internal fun NativePlayerPane(
     var controlsVisible by remember { mutableStateOf(false) }
     val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     val context = LocalContext.current
+    val audioTitle = stringResource(R.string.dialog_audio)
+    val subtitleTitle = stringResource(R.string.dialog_subtitles)
+    val playerDescription = stringResource(R.string.dialog_player_accessibility)
     BackHandler(enabled = isTv && controller != null && controlsVisible && !optionsOpen && trackType == null && !inPictureInPicture) {
         nativeView?.hideController()
     }
@@ -79,7 +84,7 @@ internal fun NativePlayerPane(
     DisposableEffect(trackType, controller, entry.id) {
         val type = trackType
         val dialog = if (type != null && controller != null && controller.isCommandAvailable(Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS)) {
-            TrackSelectionDialogBuilder(context, if (type == C.TRACK_TYPE_AUDIO) "Аудиодорожка" else "Субтитры", controller, type)
+            TrackSelectionDialogBuilder(context, if (type == C.TRACK_TYPE_AUDIO) audioTitle else subtitleTitle, controller, type)
                 .setShowDisableOption(type == C.TRACK_TYPE_TEXT).build().apply {
                     setOnDismissListener { trackType = null; if (isTv) nativeView?.focusPlaybackControl() }
                     show()
@@ -114,8 +119,8 @@ internal fun NativePlayerPane(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(vertical = 12.dp),
             )
-            ActionButton(if (fullscreen) "Назад" else "На весь экран", onFullscreen, compact = true)
-            ActionButton("Ещё", { optionsOpen = true }, Modifier.testTag("player-options"), compact = true)
+            ActionButton(if (fullscreen) stringResource(R.string.dialog_back) else stringResource(R.string.dialog_fullscreen), onFullscreen, compact = true)
+            ActionButton(stringResource(R.string.dialog_more), { optionsOpen = true }, Modifier.testTag("player-options"), compact = true)
         }
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             AndroidView(
@@ -130,7 +135,12 @@ internal fun NativePlayerPane(
                         controllerAutoShow = true
                         controllerShowTimeoutMs = 4000
                         if (isTv) setControllerAnimationEnabled(false)
-                        setShowSubtitleButton(true)
+                        setShowSubtitleButton(!isTv)
+                        if (isTv) {
+                            // Keep all TV settings in the app's remote-aware dialog. Media3's
+                            // built-in gear/subtitle menus use a separate IME-bound PopupWindow.
+                            findViewById<View>(androidx.media3.ui.R.id.exo_settings)?.setOnClickListener { openOptions() }
+                        }
                         setShowFastForwardButton(true)
                         setShowRewindButton(true)
                         setShowPreviousButton(true)
@@ -139,12 +149,19 @@ internal fun NativePlayerPane(
                         setKeepContentOnPlayerReset(true)
                         isFocusable = true
                         isFocusableInTouchMode = true
-                        contentDescription = "Видеоплеер. ОК — управление, меню — дорожки и параметры."
-                        setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { controlsVisible = it == View.VISIBLE })
+                        contentDescription = playerDescription
+                        setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
+                            controlsVisible = visibility == View.VISIBLE
+                            retainPlaybackFocusAfterControlsHide(
+                                visibility,
+                                allowFocusRetention = isTv && !optionsOpen && trackType == null && !inPictureInPicture,
+                            )
+                        })
                         if (isTv) post { focusPlaybackControl() }
                     }
                 },
                 update = { view ->
+                    view.contentDescription = playerDescription
                     if (view.player !== controller) view.player = controller
                     view.resizeMode = resizeMode
                     view.useController = !inPictureInPicture
@@ -159,9 +176,9 @@ internal fun NativePlayerPane(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Не удалось воспроизвести", style = MaterialTheme.typography.titleMedium)
-                    Text("Проверьте подключение и доступность канала. Код: $it", style = MaterialTheme.typography.bodySmall, maxLines = 3)
-                    ActionButton("Повторить", onRetry, selected = true)
+                    Text(stringResource(R.string.dialog_playback_failed), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.dialog_playback_error, it), style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                    ActionButton(stringResource(R.string.dialog_retry), onRetry, selected = true)
                 }
             }
         }
@@ -172,7 +189,54 @@ internal fun NativePlayerPane(
 @androidx.annotation.OptIn(UnstableApi::class)
 private class RemotePlayerView(context: Context) : PlayerView(context) {
     var openOptions: () -> Unit = {}
+    private val remoteInput = TvRemoteInput()
+
+    override fun dispatchKeyEventPreIme(event: KeyEvent): Boolean =
+        remoteInput.dispatch(this, event, ::dispatchRemoteKey) || super.dispatchKeyEventPreIme(event)
+
+    private fun dispatchRemoteKey(event: KeyEvent): Boolean {
+        if (dispatchKeyEvent(event)) return true
+        if (event.action != KeyEvent.ACTION_DOWN) return false
+        val direction = when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT
+            KeyEvent.KEYCODE_DPAD_RIGHT -> View.FOCUS_RIGHT
+            KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP
+            KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
+            else -> return false
+        }
+        // ViewRoot normally performs this after an unhandled native arrow. When the
+        // hidden IME intercepts it, complete that same native focus search here.
+        val focused = findFocus() ?: return false
+        val next = focused.focusSearch(direction) ?: return false
+        return next !== focused && next.requestFocus(direction)
+    }
+
+    override fun onDetachedFromWindow() {
+        remoteInput.clear()
+        super.onDetachedFromWindow()
+    }
     private var playbackFocusPending = false
+    private var controllerHidWithFocus = false
+
+    override fun clearChildFocus(child: View) {
+        // GONE clears child focus before Media3 reports the controller's visibility.
+        // Capture ownership now; the framework may assign another focus meanwhile.
+        controllerHidWithFocus = child.id == androidx.media3.ui.R.id.exo_controller &&
+            child.visibility == View.GONE && focusedChild === child && hasWindowFocus() &&
+            resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+        super.clearChildFocus(child)
+    }
+
+    fun retainPlaybackFocusAfterControlsHide(visibility: Int, allowFocusRetention: Boolean) {
+        val restoreFocus = controllerHidWithFocus
+        controllerHidWithFocus = false
+        if (visibility == View.GONE && restoreFocus && allowFocusRetention &&
+            isAttachedToWindow && isShown && hasWindowFocus() && useController && player != null) {
+            // This runs after setVisibility(GONE) finishes clearing focus. Keep the
+            // video ready for remote input without reopening controls or dialogs.
+            requestFocus()
+        }
+    }
 
     fun focusPlaybackControl() {
         playbackFocusPending = true
@@ -180,6 +244,7 @@ private class RemotePlayerView(context: Context) : PlayerView(context) {
     }
 
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        if (!hasWindowFocus) remoteInput.clear()
         super.onWindowFocusChanged(hasWindowFocus)
         if (hasWindowFocus) restorePlaybackFocusWhenReady()
     }

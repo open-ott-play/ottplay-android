@@ -21,7 +21,7 @@ class LegacySourceImporterTest {
         assertEquals("private", result.sources[1].password)
         assertEquals("https://portal.test/stalker_portal/api/", result.sources[2].url)
         assertTrue(result.sources[2].headers.isEmpty())
-        assertTrue(result.notes.any { it.contains("локальный файл") })
+        assertTrue(result.messages.any { it.key == CoreMessageKey.LEGACY_PLAYLIST_UNSUPPORTED })
         assertEquals(1.0, result.sources[0].catchupDaysFallback)
         assertFalse(result.toString().contains("private"))
         assertFalse(result.toString().contains("do-not-import"))
@@ -30,8 +30,8 @@ class LegacySourceImporterTest {
     @Test fun `ordinary settings backup correctly reports that it does not contain source credentials`() {
         val result = LegacySourceImporter.parse("""{"version":1,"settings":{"localCmdUrl":"https://private.test"},"favoritesArray":[123],"parentalArray":[]}""")
         assertTrue(result.sources.isEmpty())
-        assertTrue(result.notes.any { it.contains("но не адреса и учётные данные") })
-        assertTrue(result.notes.any { it.contains("ID избранных") })
+        assertTrue(result.messages.any { it.key == CoreMessageKey.LEGACY_BACKUP_WITHOUT_SOURCES })
+        assertTrue(result.messages.any { it.key == CoreMessageKey.LEGACY_FAVORITES_SKIPPED })
     }
 
     @Test fun `direct M3U object and wrapped storage objects are accepted without fetching their URLs`() {

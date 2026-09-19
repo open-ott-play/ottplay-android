@@ -28,30 +28,30 @@ object DrmPolicy {
     )
 
     fun licenseUrl(value: String): String {
-        require(value.length in 1..16_384 && value == value.trim()) { "Некорректный адрес лицензии DRM" }
+        require(value.length in 1..16_384 && value == value.trim()) { "Invalid DRM license address" }
         val uri = try { URI(value) } catch (_: Exception) { null }
         require(uri != null && uri.scheme?.lowercase(Locale.ROOT) in setOf("http", "https") &&
             !uri.host.isNullOrBlank() && uri.rawUserInfo == null && uri.rawFragment == null &&
-            uri.port in -1..65535 && value.all { it.code in 33..126 }) { "Некорректный адрес лицензии DRM" }
+            uri.port in -1..65535 && value.all { it.code in 33..126 }) { "Invalid DRM license address" }
         val decoded = try { URLDecoder.decode(value, "UTF-8") } catch (_: Exception) { "{" }
         require(decoded.none { it == '{' || it == '}' || it.code < 32 || it.code == 127 }) {
-            "Подстановки запроса лицензии DRM не поддерживаются"
+            "DRM license request substitutions are unsupported"
         }
         return value
     }
 
     fun headers(input: Map<String, String>): Map<String, String> {
-        require(input.size <= 64) { "Слишком много заголовков лицензии DRM" }
+        require(input.size <= 64) { "Too many DRM license headers" }
         val names = HashSet<String>()
         val result = LinkedHashMap<String, String>()
         input.forEach { (name, value) ->
             val lower = name.lowercase(Locale.ROOT)
             require(name.matches(Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")) && names.add(lower)) {
-                "Некорректный или повторный заголовок лицензии DRM"
+                "Invalid or duplicate DRM license header"
             }
             require(lower !in setOf("host", "content-length", "transfer-encoding", "connection") &&
                 value.length <= 8192 && value.all { it == '\t' || it.code in 32..126 }) {
-                "Некорректный заголовок лицензии DRM"
+                "Invalid DRM license header"
             }
             val canonical = when (lower) { "content-type" -> "Content-Type"; "soapaction" -> "SOAPAction"; else -> name }
             result[canonical] = value

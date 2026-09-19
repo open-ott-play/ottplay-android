@@ -1,8 +1,8 @@
 # Google Play submission draft — OTT-play Native
 
-Prepared on **2026-09-13** for package **`play.ott.foss.nativeapp`**, candidate **0.2.1 / versionCode 3**. This is a filled working draft based on source behavior. **Play Console has not been filled or submitted by this document.** Device and release validation are tracked separately; no passing device result is asserted here.
+Prepared on **2026-09-13**, updated **2026-09-14**, for package **`play.ott.foss.nativeapp`**, candidate **0.2.1 / versionCode 3**. This is a filled working draft based on source behavior. **Play Console has not been filled or submitted by this document.** Device and release validation are tracked separately; no passing device result is asserted here.
 
-**Confirmed Console blocker, 2026-09-13:** authenticated Play Console inspection showed the **alvit Personal** developer account on **Create your first app**, with no app records. **Create app is disabled until account verification is completed.** Google is reviewing identity documents that have already been uploaded; contact-phone verification remains pending after identity approval. No Console settings were changed during the inspection. App creation, upload and submission cannot be completed while this gate remains in place.
+**Current Console status, 2026-09-14:** authenticated inspection showed **Create app enabled**, contact-phone verification complete, and no app records. The account-verification gate observed on 2026-09-13 is historical and no longer prevents app creation. App creation, upload, app-content declarations and submission remain to be completed; an enabled button does not establish production-access eligibility or app approval.
 
 Publisher: **alvit**. Support/privacy: **alvit.work@gmail.com**. Privacy-policy field: **https://astral-oasis-sbqd.here.now/**. Listing copy and graphics are in [store](../store/README.md). The Native repository is private; do not use its source or issue URLs as publicly accessible listing or reviewer resources.
 
@@ -16,18 +16,18 @@ Username/password: **leave unused for this instruction**; there is no demo login
 
 Copy-ready reviewer notes, wherever the live Console offers an instructions field or Google requests a walkthrough:
 
-> The UI is in Russian. On first launch, choose “Попробовать демо” (Try demo), then open “Тест изображения · 8 секунд”. This is an original eight-second offline video with silent audio. No account, network, payment or OTP is needed. “Политика конфиденциальности” opens the offline privacy policy. If already configured, open “Ещё” / “Настройки” and choose “Добавить демоисточник”. Provider accounts are optional and belong to the user's chosen service.
+> The UI follows the Android language preferences, with English as its fallback. The in-app Language setting can override this and includes all 20 languages offered by OTT-play FOSS. On first launch, choose “Try the demo”, then open “Test pattern · 8 seconds”. This is an original eight-second offline video with silent audio. No account, network, payment or OTP is needed. “Privacy policy” opens the offline privacy policy. If already configured, open “More” / “Settings” and choose “Add a demo source”. Provider accounts are optional and belong to the user's chosen service. These button names are for English; choose Settings → Language → English if needed.
 
 This permits review of setup, the library, basic playback, settings and privacy. It **does not demonstrate authenticated Xtream/Stalker, remote EPG, live catch-up or protected-service DRM behavior**. These optional bring-your-own-source paths are not an unconditional account prerequisite for reviewing the player. If Google requests access to a restricted external backend, the publisher must supply valid permitted test endpoints and credentials/resources in additional instructions. Do not claim that the local demo verifies those integrations. Google requires access details where functionality is restricted; the current help page calls this area **Sign-in details**. [Prepare your app for review](https://support.google.com/googleplay/android-developer/answer/9859455?hl=en).
 
 ## Reviewer walkthrough
 
-1. Fresh install: read the welcome-screen privacy policy, close it with Back, and choose **Попробовать демо**. No permission dialog or provider login is required for this local demo.
-2. The movie library contains **Тест изображения · 8 секунд**. Select it using touch or TV D-pad/OK. The silent audio track is intentional.
-3. Show playback controls and open **Параметры плеера** to inspect scaling, speed and available tracks. A track option depends on the selected media; the demo does not contain every format or subtitle configuration.
-4. Back leaves fullscreen and exposes the current-playing bar. Stop using the player controls to end playback. Add/remove favorites and remove the demo via **Источники** to inspect local library controls.
-5. Phone: inspect PiP on a supported device and the **Фоновое воспроизведение** setting. TV: press Home during playback; playback should pause, and TV does not offer PiP or the phone background setting. Record actual results separately.
-6. **Источники → Добавить по ссылке** exposes M3U/Xtream/Stalker configuration. The Play build accepts HTTPS only. Use authorized reviewer fixtures for network and provider scenarios; no commercial content rights are supplied by the app.
+1. Fresh install: read the welcome-screen privacy policy, close it with Back, and choose **Try the demo**. No permission dialog or provider login is required for this local demo.
+2. The movie library contains **Test pattern · 8 seconds**. Select it using touch or TV D-pad/OK. The silent audio track is intentional.
+3. Show playback controls and open **Player options** to inspect scaling, speed and available tracks. A track option depends on the selected media; the demo does not contain every format or subtitle configuration.
+4. Back leaves fullscreen and exposes the current-playing bar. Stop using the player controls to end playback. Add/remove favorites and remove the demo via **Sources** to inspect local library controls.
+5. Phone: inspect PiP on a supported device and the **Background playback** setting. TV: press Home during playback; playback should pause, and TV does not offer PiP or the phone background setting. Record actual results separately.
+6. **Sources → Add by URL** exposes M3U/Xtream/Stalker configuration. The Play build accepts HTTPS only. Use authorized reviewer fixtures for network and provider scenarios; no commercial content rights are supplied by the app.
 
 ## Data safety draft
 
@@ -41,7 +41,7 @@ Scope this form to the Play package and all its active Play versions/tracks. The
 - Does the app provide deletion of all collected remote data? **Do not claim this badge on present evidence.** It deletes its local state and accepts support inquiries, but cannot delete an arbitrary provider's server logs/account. Describe those boundaries in the policy.
 - Independent security review / Families commitment badges: **No claim**. No corresponding external certification or target-audience decision is established here.
 
-The per-type labels below are proposed mappings for Console review, not a claim about an uninspected provider's retention. Draft all listed remote types as **optional** because users can use the bundled offline player without an account and choose which source to add. Their purpose is **App functionality**; provider authentication also uses **Account management**. Do not select advertising, analytics or personalization purposes unless actual behavior changes.
+The per-type labels below are proposed mappings for Console review, not a claim about an uninspected provider's retention. Draft all listed remote types as **optional** because users can use the bundled offline player without an account and choose which source to add. Their purpose is **App functionality**, including authentication to the user's chosen external provider. **Account management** describes an account with the app developer; this app does not provide such accounts, so entering external provider credentials does not establish that purpose. Do not select advertising, analytics or personalization purposes unless actual behavior changes. [Google's data-purpose definitions](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en).
 
 ### Provider account information
 
@@ -55,7 +55,7 @@ The per-type labels below are proposed mappings for Console review, not a claim 
 
 **Draft type:** Device or other IDs → **Device or other IDs**. The MAC-style portal identifier is entered by the user and is not read from device hardware. DRM challenges/provisioning are platform-generated; their exact device/account fields depend on the DRM system and receiving service.
 
-**Flow:** Stalker authentication and native DRM license/provisioning requests. Draft collection **Yes**, optional **Yes**, purpose **App functionality** and authentication **Account management**. Keep sharing conservative where the destination or data is not sufficiently documented for an exception. Do not assert that the app collects advertising ID, IMEI or the hardware MAC: its source does not implement those reads. Code: `StalkerProvider.kt`, `app/.../playback/ScopedDrmCallback.kt`.
+**Flow:** Stalker authentication and native DRM license/provisioning requests. Draft collection **Yes**, optional **Yes**, purpose **App functionality**, including provider authentication and playback authorization. Keep sharing conservative where the destination or data is not sufficiently documented for an exception. Do not assert that the app collects advertising ID, IMEI or the hardware MAC: its source does not implement those reads. Code: `StalkerProvider.kt`, `app/.../playback/ScopedDrmCallback.kt`.
 
 ### Playback requests and background guide refresh
 
@@ -103,8 +103,7 @@ EPG refresh uses ordinary WorkManager scheduling. Do not declare it as a mediaPl
 
 ## Remaining Console actions
 
-- **Resolve the confirmed account-verification gate first:** wait for Google's review of the already-uploaded identity documents, then complete the pending contact-phone verification and confirm that **Create app** becomes available. The inspected account is **alvit Personal** and currently has no apps. Do not re-upload identity documents or change account details merely because review is pending.
-- Create the first app record once permitted and inspect its actual production-access eligibility/testing requirements. These later requirements are not established by the current empty, verification-blocked Console.
+- Create the first app record using the now-enabled **Create app** action and inspect its actual production-access eligibility/testing requirements. Completed contact-phone verification and permission to create an app do not establish those later requirements.
 - Enter the prepared contact, privacy, listing and access fields; supply any additional authorized provider reviewer access required.
 - Resolve and enter the Data safety draft. Complete content rating, target audience, ads and other app-content questionnaires in the live Console; no rating or age-target decision is asserted here.
 - Upload the intended signed release AAB and verify package/version/signing in Console. Register the correct upload certificate and confirm Play App Signing; keep Full/preview/debug artifacts separate.
