@@ -12,6 +12,8 @@ import org.xml.sax.ext.DefaultHandler2
 import play.ott.core.GuideProgrammeRules
 import play.ott.core.GuideTime
 import play.ott.core.GuideTimeFormat
+import play.ott.core.XmltvRecordFormat
+import play.ott.core.XmltvRecords
 
 /** Parses XMLTV off the UI thread. All times are absolute UTC epoch milliseconds. */
 object XmltvParser {
@@ -72,14 +74,11 @@ object XmltvParser {
 
     private class EpgHandler : DefaultHandler2() {
         val programmes = mutableListOf<Programme>()
-        private var channelId = ""
-        private var start: Long? = null
-        private var end: Long? = null
-        private var title = ""
-        private var description = ""
+        private val records = XmltvRecords(XmltvRecordFormat.ANDROID)
+        // SAX owns resource limits; record selection and field contents belong to the core.
         private var inProgramme = false
         private var field: String? = null
-        private val text = StringBuilder()
+        private var textLength = 0
         private var depth = 0
 
         override fun startDTD(name: String?, publicId: String?, systemId: String?) { throw SAXException("DTD is disabled") }
@@ -92,37 +91,32 @@ object XmltvParser {
                 "programme" -> {
                     if (inProgramme) throw SAXException("Nested programme")
                     inProgramme = true
-                    channelId = attributes.getValue("channel").orEmpty().trim()
-                    start = parseTimestamp(attributes.getValue("start").orEmpty())
-                    end = parseTimestamp(attributes.getValue("stop").orEmpty())
-                    title = ""; description = ""; field = null
+                    field = null
                 }
-                "title", "desc" -> if (inProgramme) { field = element; text.setLength(0) }
+                "title", "desc" -> if (inProgramme) { field = element; textLength = 0 }
             }
+            records.start(element, (0 until attributes.length).associate { attributes.getQName(it) to attributes.getValue(it) })
         }
 
         override fun characters(ch: CharArray, start: Int, length: Int) {
             if (field != null) {
-                if (text.length + length > 65_536) throw SAXException("XML text limit exceeded")
-                text.append(ch, start, length)
+                if (textLength + length > 65_536) throw SAXException("XML text limit exceeded")
+                textLength += length
             }
+            records.text(String(ch, start, length))
         }
 
         override fun endElement(uri: String?, localName: String?, qName: String?) {
             val element = localName?.takeIf(String::isNotBlank) ?: qName.orEmpty()
-            if (element == field) {
-                if (element == "title" && title.isBlank()) title = text.toString().trim()
-                if (element == "desc" && description.isBlank()) description = text.toString().trim()
-                field = null
-            }
-            if (element == "programme") {
-                val from = start; val to = end
-                if (GuideProgrammeRules.validAndroid(channelId, from, to)) {
+            if (element == field) field = null
+            records.end(element)
+            for (row in records.drain()) {
+                if (row[0] == "programme") {
                     if (programmes.size >= 500_000) throw SAXException("Programme count limit exceeded")
-                    programmes += Programme(channelId, title.ifBlank { "Untitled programme" }, from!!, to!!, description)
+                    programmes += Programme(row[1], row[4], row[2].toLong(), row[3].toLong(), row[5])
                 }
-                inProgramme = false
             }
+            if (element == "programme") inProgramme = false
             depth--
         }
     }
