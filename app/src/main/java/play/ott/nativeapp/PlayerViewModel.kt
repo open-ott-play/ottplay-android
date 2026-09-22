@@ -196,7 +196,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             AppAction.Refresh -> state.value.selectedSourceId?.let { load(it, true) }
             is AppAction.ToggleFavorite -> operation {
                 repository.preferences.update {
-                    it.copy(favorites = if (action.entry.id in it.favorites) it.favorites - action.entry.id else it.favorites + action.entry.id)
+                    it.copy(favorites = play.ott.core.DurableSelections.toggle(it.favorites, action.entry.id))
                 }
             }
             is AppAction.Play -> play(action.entry)

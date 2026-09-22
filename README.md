@@ -128,7 +128,14 @@ native. Thirty-three captured fixtures preserve the parser output contract.
 To update it, build the shared core and run its
 `node scripts/distribute.cjs install-jvm /absolute/path/to/ottplay-android`, then
 run `./gradlew :core:test :app:assembleDebug`. A normal Android build needs no
-sibling source checkout. Other Android domain rules are not yet migrated.
+sibling source checkout.
+
+Legacy settings interpretation, provider source/entry admission, favorites and
+resume retention, backup validation/merge and source selection now also use this
+JAR. The app's channel navigator delegates live catalog selection and stale switch
+admission; the progress recorder delegates resume eligibility. DataStore, coroutines,
+OkHttp/URL codecs, credential storage, Media3, DRM and OS controller trust remain
+native effects. Captured adapter fixtures preserve import and state behavior.
 
 The compile SDK is API 37 to satisfy the declared Compose dependencies. The
 minimum Android API remains 26 and target API remains 36. CI installs the

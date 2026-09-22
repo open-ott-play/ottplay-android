@@ -40,11 +40,7 @@ class PreferencesStore(context: Context) {
     }
 
     suspend fun saveResumePosition(id: String, positionMs: Long) = update { preferences ->
-        if (preferences.resumePositions[id] == positionMs.coerceAtLeast(0)) return@update preferences
-        val positions = LinkedHashMap(preferences.resumePositions)
-        positions.remove(id)
-        positions[id] = positionMs.coerceAtLeast(0)
-        while (positions.size > 500) positions.remove(positions.keys.first())
-        preferences.copy(resumePositions = positions)
+        val positions = play.ott.core.DurableSelections.saveResume(preferences.resumePositions, id, positionMs)
+        if (positions === preferences.resumePositions) preferences else preferences.copy(resumePositions = positions)
     }
 }
