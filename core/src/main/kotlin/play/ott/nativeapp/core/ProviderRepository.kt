@@ -52,6 +52,9 @@ class ProviderRepository(
         xtream.episodes(config, series)
     }
 
+    fun epgSources(config: SourceConfig, catalog: Catalog): List<String> =
+        play.ott.core.NativeGuideSources.urls(catalog.epgUrls, config.epgUrl, false, play.ott.core.NativeSourceFormat.ANDROID_RAW)
+
     suspend fun loadEpg(url: String, headers: Map<String, String> = emptyMap()): List<Programme> = withContext(Dispatchers.IO) {
         XmltvParser.parse(http.get(url, headers, MAX_EPG_BYTES).bytes)
     }

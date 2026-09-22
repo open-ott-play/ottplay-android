@@ -166,7 +166,7 @@ class NativeRepository(
     }
 
     suspend fun refreshEpg(source: SourceConfig, catalog: Catalog) = withContext(Dispatchers.IO) {
-        val urls = (listOf(source.epgUrl) + catalog.epgUrls).filter { it.isNotBlank() }.distinct()
+        val urls = providers.epgSources(source, catalog)
         if (urls.isEmpty()) return@withContext
         val programmes = urls.flatMap { providers.loadEpg(it, epgHeaders(source, it)) }
         refreshMutex.withLock {
