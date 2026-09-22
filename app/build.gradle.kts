@@ -18,7 +18,7 @@ if (signingVariant != null || signingValues.values.any { it != null }) {
 }
 android {
     namespace = "play.ott.nativeapp"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "play.ott.foss.nativeapp"
         minSdk = 26

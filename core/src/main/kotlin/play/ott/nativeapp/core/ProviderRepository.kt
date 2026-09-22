@@ -62,7 +62,7 @@ class ProviderRepository(
         mergedHeaders(config.headers)
         if (config.kind == SourceKind.XTREAM && (config.username.isBlank() || config.password.isBlank()))
             throw ProviderException("Xtream username and password are required")
-        if (config.kind == SourceKind.STALKER && !config.mac.matches(Regex("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}")))
+        if (config.kind == SourceKind.STALKER && !play.ott.core.StalkerProtocol.validMac(config.mac))
             throw ProviderException("Enter a MAC address in 00:1A:79:00:00:00 format")
     }
 }

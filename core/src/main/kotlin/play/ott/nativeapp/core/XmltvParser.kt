@@ -3,20 +3,19 @@ package play.ott.nativeapp.core
 import java.io.ByteArrayInputStream
 import java.io.FilterInputStream
 import java.io.InputStream
-import java.time.DateTimeException
-import java.time.LocalDateTime
-import java.time.ZoneOffset
 import java.util.zip.GZIPInputStream
 import javax.xml.parsers.SAXParserFactory
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
 import org.xml.sax.SAXException
 import org.xml.sax.ext.DefaultHandler2
+import play.ott.core.GuideProgrammeRules
+import play.ott.core.GuideTime
+import play.ott.core.GuideTimeFormat
 
 /** Parses XMLTV off the UI thread. All times are absolute UTC epoch milliseconds. */
 object XmltvParser {
     private const val MAX_EXPANDED_BYTES = 128 * 1024 * 1024
-    private val timestamp = Regex("^(\\d{8}(?:\\d{2}){0,3})(?:\\s*(Z|[+-]\\d{2}:?\\d{2}))?$")
 
     fun parse(bytes: ByteArray): List<Programme> {
         if (bytes.size > MAX_EPG_BYTES) throw ProviderException("EPG download exceeds the supported size limit")
@@ -47,21 +46,11 @@ object XmltvParser {
             if (error is ProviderException) throw error
             throw ProviderException("EPG is malformed XML or uses unsupported document declarations")
         }
-        return handler.programmes.distinctBy { Triple(it.channelId, it.startMillis, it.endMillis) }
-            .sortedWith(compareBy<Programme> { it.channelId }.thenBy { it.startMillis })
+        val rows = handler.programmes
+        return GuideProgrammeRules.androidOrder(rows.size, { rows[it].channelId }, { rows[it].startMillis }, { rows[it].endMillis }).map(rows::get)
     }
 
-    fun parseTimestamp(value: String): Long? {
-        val match = timestamp.matchEntire(value.trim()) ?: return null
-        val date = match.groupValues[1]
-        val zone = match.groupValues[2].ifBlank { "Z" }
-        return try {
-            LocalDateTime.of(date.substring(0, 4).toInt(), date.substring(4, 6).toInt(), date.substring(6, 8).toInt(),
-                date.drop(8).take(2).ifBlank { "0" }.toInt(), date.drop(10).take(2).ifBlank { "0" }.toInt(),
-                date.drop(12).take(2).ifBlank { "0" }.toInt())
-                .toInstant(ZoneOffset.of(zone)).toEpochMilli()
-        } catch (_: DateTimeException) { null } catch (_: NumberFormatException) { null }
-    }
+    fun parseTimestamp(value: String): Long? = GuideTime.parse(value, GuideTimeFormat.ANDROID)
 
     private class BoundedInputStream(input: InputStream, private val limit: Int) : FilterInputStream(input) {
         private var count = 0
@@ -128,9 +117,9 @@ object XmltvParser {
             }
             if (element == "programme") {
                 val from = start; val to = end
-                if (channelId.isNotBlank() && from != null && to != null && to > from) {
+                if (GuideProgrammeRules.validAndroid(channelId, from, to)) {
                     if (programmes.size >= 500_000) throw SAXException("Programme count limit exceeded")
-                    programmes += Programme(channelId, title.ifBlank { "Untitled programme" }, from, to, description)
+                    programmes += Programme(channelId, title.ifBlank { "Untitled programme" }, from!!, to!!, description)
                 }
                 inProgramme = false
             }
