@@ -13,6 +13,9 @@ import play.ott.nativeapp.R
 import play.ott.nativeapp.i18n.AppLanguages
 import play.ott.nativeapp.AppTransportPolicy
 import play.ott.nativeapp.core.*
+import play.ott.core.NativeGuideRefresh
+import play.ott.core.NativeGuideRefreshAction
+import play.ott.core.NativeGuideRefreshFormat
 import java.util.UUID
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -167,10 +170,34 @@ class NativeRepository(
 
     suspend fun refreshEpg(source: SourceConfig, catalog: Catalog) = withContext(Dispatchers.IO) {
         val urls = providers.epgSources(source, catalog)
-        if (urls.isEmpty()) return@withContext
-        val programmes = urls.flatMap { providers.loadEpg(it, epgHeaders(source, it)) }
-        refreshMutex.withLock {
-            if (sources().firstOrNull { it.id == source.id } == source) db.replaceEpg(source.id, programmes)
+        val refresh = NativeGuideRefresh(urls.size, NativeGuideRefreshFormat.ANDROID)
+        val programmes = mutableListOf<Programme>()
+        var failure: Throwable? = null
+        while (true) when (refresh.action()) {
+            NativeGuideRefreshAction.FETCH -> {
+                val url = urls[refresh.index()]
+                try {
+                    programmes += providers.loadEpg(url, epgHeaders(source, url))
+                } catch (error: Throwable) {
+                    failure = error
+                }
+                refresh.advance(failure == null)
+            }
+            NativeGuideRefreshAction.VALIDATE_SOURCE -> refreshMutex.withLock {
+                // Keep equality and the transaction under the same lock as source edits.
+                refresh.advance(sources().firstOrNull { it.id == source.id } == source)
+                if (refresh.action() == NativeGuideRefreshAction.WRITE_DATABASE) {
+                    try {
+                        db.replaceEpg(source.id, programmes)
+                    } catch (error: Throwable) {
+                        failure = error
+                    }
+                    refresh.advance(failure == null)
+                }
+            }
+            NativeGuideRefreshAction.REPLACE, NativeGuideRefreshAction.SKIP -> return@withContext
+            NativeGuideRefreshAction.FAIL -> throw checkNotNull(failure)
+            else -> error("Unexpected Android guide refresh action: ${refresh.action()}")
         }
     }
 
