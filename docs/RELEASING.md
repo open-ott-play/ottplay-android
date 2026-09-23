@@ -73,7 +73,7 @@ Output is written to `build/distributions/<tag>/`: signed `.apk` and `.aab` file
 
 ## Releasing through GitHub Actions
 
-1. Commit the new version and all changes to `main`. **Android native** automatically runs host, phone API 35 and real Android TV API 36 jobs on pushes to `main` and pull requests. Wait for all three on the exact release commit. A manual run must set `run_device_tests=true`; PR runs validate changes but cannot satisfy the publication gate.
+1. Commit the new version and all changes to `main`. **Android native** automatically runs host, phone API 35 and real Android TV API 36 jobs on pushes to `main` and pull requests, except for proven documentation-only changes. Wait for all three on the exact release commit. If its automatic run was skipped, run **Android native** manually with `run_device_tests=true`; skipped jobs cannot qualify a release. PR runs validate changes but cannot satisfy the publication gate.
 2. Confirm that the five signing secrets for the selected channel are configured. Run **Signed Android release** manually on `main` and select `preview` or `production`.
 3. The workflow checks a clean checkout, matching SHA, an unused tag, increasing version/code and a successful full matrix on the same commit. It then repeats host tests/lint, builds and verifies both signatures, and produces checksums.
 4. The key is decoded only into a private temporary runner directory and removed in an `always()` step. Configuration cache is disabled for signed builds. Artifacts contain release files and reports, not the keystore. The build job has read-only repository access.
