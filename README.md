@@ -141,6 +141,6 @@ The compile SDK is API 37 to satisfy the declared Compose dependencies. The
 minimum Android API remains 26 and target API remains 36. CI installs the
 `platforms;android-37.0` package; phone and TV emulator OS versions are unchanged.
 
-Canonical source: [ottplay-unification/shared-core](https://github.com/open-ott-play/ottplay-unification/tree/main/shared-core).
-Access to the private migration repository is required to rebuild it; pinned
+Canonical source: [ottplay-core/shared-core](https://github.com/open-ott-play/ottplay-core/tree/main/shared-core).
+Access to the private core repository is required to rebuild it; pinned
 consumer artifacts remain self-contained and carry source and artifact hashes.
