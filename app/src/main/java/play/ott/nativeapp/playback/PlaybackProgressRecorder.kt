@@ -64,9 +64,5 @@ internal class PlaybackProgressRecorder(
 }
 
 /** A short clip must not lose its resume point merely because it has fewer than five seconds left. */
-internal fun resumePosition(positionMs: Long, durationMs: Long): Long {
-    val position = positionMs.coerceAtLeast(0)
-    if (durationMs <= 0) return position
-    val endMargin = minOf(5_000, durationMs / 20)
-    return if (durationMs - position <= endMargin) 0 else position.coerceAtMost(durationMs)
-}
+internal fun resumePosition(positionMs: Long, durationMs: Long): Long =
+    play.ott.core.PlaybackRules.nativeResume(positionMs, durationMs)

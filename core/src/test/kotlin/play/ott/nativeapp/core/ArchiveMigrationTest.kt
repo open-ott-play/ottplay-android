@@ -4,8 +4,29 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import java.time.Instant
 
 class ArchiveMigrationTest {
+    @Test fun `shared archive uses the host zone database across a daylight saving fold`() {
+        val entry = MediaEntry("entry", "source", "Display", "https://example.invalid/live.m3u8",
+            catchup = Catchup("xtream", "https://example.invalid/{durationMinutes}/{startDate}", 2.0, "Europe/Berlin"))
+        for (clock in listOf("2026-10-25T00:30:00Z", "2026-10-25T01:30:00Z")) {
+            val start = Instant.parse(clock).toEpochMilli()
+            val programme = Programme("Display", "Show", start, start + 180_000)
+            assertEquals("https://example.invalid/2/2026-10-25:02-30", CatchupResolver.resolve(entry, programme, start + 90_000)?.url)
+        }
+    }
+
+    @Test fun `flussonic preserves encoded resource parsing and signed query while boundary remains strict`() {
+        val entry = MediaEntry("entry", "source", "Display", "https://example.invalid/index%2Em3u8?token=a%2Fb&x=1&x=2#player",
+            catchup = Catchup("flussonic", days = 2.0))
+        val programme = Programme("Display", "Show", 1_800_000_000_000, 1_800_000_060_000)
+        assertEquals("https://example.invalid/archive-1800000000-60.m3u8?token=a%2Fb&x=1&x=2#player",
+            CatchupResolver.resolve(entry, programme, programme.startMillis + 600_000)?.url)
+        assertEquals("https://example.invalid/timeshift_abs-1800000000.m3u8?token=a%2Fb&x=1&x=2#player",
+            CatchupResolver.resolve(entry, programme, programme.startMillis + 599_000)?.url)
+    }
+
     @Test fun `legacy archive hours are fallback only and explicit playlist disable wins`() {
         val source = LegacySourceImporter.parse("""{"M3Us":[{"www":"https://example.invalid/list.m3u","rechours":48}]}""").sources.single()
         val entries = M3uParser.parse("""

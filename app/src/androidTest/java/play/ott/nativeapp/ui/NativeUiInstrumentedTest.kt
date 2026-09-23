@@ -79,8 +79,13 @@ class NativeUiInstrumentedTest {
         // A movie-only source must select the film tab; an empty live section must not hide it.
         compose.onNodeWithTag("catalog-item-${entry.id}").assertIsDisplayed().activateForDevice()
         compose.onNodeWithTag("player-container").assertIsDisplayed()
+        // A previous editor's IME can outlive Compose idleness and consume Back.
+        // Deliver one hardware key only after the activity owns a keyboard-free window.
+        awaitActivityWindowReady(compose.activity, hideIme = true)
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-        compose.waitForIdle()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("player-container").fetchSemanticsNodes().isEmpty()
+        }
         compose.onNodeWithTag("player-container").assertDoesNotExist()
         compose.onNodeWithTag("now-playing-bar").assertIsDisplayed()
         compose.onNodeWithText(text(R.string.library_sources)).activateForDevice()

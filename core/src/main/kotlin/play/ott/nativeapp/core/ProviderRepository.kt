@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.OkHttpClient
+import play.ott.core.OperatorSources
 
 /** Network/catalog operations run off the main thread; cancellation cancels the active HTTP call. */
 class ProviderRepository(
@@ -35,8 +36,10 @@ class ProviderRepository(
         // A locally imported M3U has a content:// configuration URL; its individual streams
         // are still HTTP(S). NativeRepository owns opening local files, not this HTTP layer.
         if (config.kind != SourceKind.M3U) validate(config)
-        if (entry.sourceId != config.id) throw ProviderException("This item belongs to another source")
-        if (entry.kind == MediaKind.SERIES) throw ProviderException("Choose an episode before playing a series")
+        when (OperatorSources.relationship("android-resolve", config.kind.name.lowercase(), config.id, entry.kind.name.lowercase(), entry.sourceId)) {
+            "SOURCE_MISMATCH" -> throw ProviderException("This item belongs to another source")
+            "FOLDER_REQUIRED" -> throw ProviderException("Choose an episode before playing a series")
+        }
         val stream = if (config.kind == SourceKind.STALKER) stalker.resolve(config, entry) else {
             val url = http.checkedUrl(entry.url).toString()
             PlaybackStream(url, mimeType = inferMimeType(url))
@@ -47,23 +50,26 @@ class ProviderRepository(
 
     suspend fun loadEpisodes(config: SourceConfig, series: MediaEntry): List<MediaEntry> = withContext(Dispatchers.IO) {
         validate(config)
-        if (config.kind != SourceKind.XTREAM || series.kind != MediaKind.SERIES || series.sourceId != config.id)
+        if (OperatorSources.relationship("android-episodes", config.kind.name.lowercase(), config.id, series.kind.name.lowercase(), series.sourceId).isNotEmpty())
             throw ProviderException("Episode lists require a series from this Xtream source")
         xtream.episodes(config, series)
     }
+
+    fun epgSources(config: SourceConfig, catalog: Catalog): List<String> =
+        play.ott.core.NativeGuideSources.urls(catalog.epgUrls, config.epgUrl, false, play.ott.core.NativeSourceFormat.ANDROID_RAW)
 
     suspend fun loadEpg(url: String, headers: Map<String, String> = emptyMap()): List<Programme> = withContext(Dispatchers.IO) {
         XmltvParser.parse(http.get(url, headers, MAX_EPG_BYTES).bytes)
     }
 
     private fun validate(config: SourceConfig) {
-        if (config.id.isBlank()) throw ProviderException("Source identifier is required")
+        if (!OperatorSources.validId(config.id, true)) throw ProviderException("Source identifier is required")
         http.checkedUrl(config.url)
         mergedHeaders(config.headers)
-        if (config.kind == SourceKind.XTREAM && (config.username.isBlank() || config.password.isBlank()))
-            throw ProviderException("Xtream username and password are required")
-        if (config.kind == SourceKind.STALKER && !config.mac.matches(Regex("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}")))
-            throw ProviderException("Enter a MAC address in 00:1A:79:00:00:00 format")
+        when (OperatorSources.credentials(config.kind.name.lowercase(), config.username, config.password, config.mac, true)) {
+            "SOURCE_CREDENTIALS" -> throw ProviderException("Xtream username and password are required")
+            "STALKER_MAC" -> throw ProviderException("Enter a MAC address in 00:1A:79:00:00:00 format")
+        }
     }
 }
 

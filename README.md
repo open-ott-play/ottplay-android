@@ -87,3 +87,60 @@ Device jobs compile their APKs before booting Android and limit the remaining Gr
 ## Authoring language
 
 Write code comments, documentation, commit messages, and pull-request text in English. Preserve UI translations, language choices, and external or provider data in their original languages.
+
+## Shared domain core
+
+XMLTV timestamp conversion is provided by the generated
+`core/vendor/ottplay-core.jar`. SAX decoding, decompression limits and entity
+rejection remain in the Android adapter. The Gradle compile task verifies the
+JAR against `core/vendor/ottplay-core.manifest.json`. The artifact is compiled
+from the OttPlay `shared-core` Kotlin Multiplatform source, also used by the
+FOSS2 browser and Node EPG filter; do not restore an Android date parser copy.
+
+`CatchupResolver` also delegates archive retention, identity checks, template
+expansion and Flussonic selection to this JAR. Android supplies the IANA zone
+database and OkHttp URL parser, then applies its existing origin-scoped headers.
+The Android contract still allows the elapsed portion of a current programme;
+FOSS2's completed-programme contract is an explicit profile in the same core.
+
+`M3uParser` delegates line/metadata parsing, grouping, identity inputs, archive
+metadata and directive order to the same JAR. It resolves URLs and decodes
+headers/DRM with platform libraries. HLS, folded metadata, generated-name
+localization and duplicate validation retain their existing contracts.
+
+`XtreamProvider` delegates account validation, request order, catalog/series
+normalization, identities, stream routes and archive eligibility to the JAR.
+HTTP, JSON/URL decoding and native model/localization conversion stay here.
+The core preserves embedded live responses, optional HTTP 404/405/501 sections
+and the 100,000-row limit before deduplication and subsequent section requests.
+The 68 captured Xtream migration cases exercise the adapter with MockWebServer.
+
+`StalkerProvider` delegates MAG and JSON-RPC request order, token/retry policy,
+pagination, catalog identities and media-link interpretation to the same JAR.
+The host retains OkHttp, JSON, mutexes and localized model conversion. The 63
+captured migration scenarios include token reuse, one 401/403 retry, RPC formats
+and portal pagination failures.
+
+XMLTV programme validation, first-duplicate retention and channel/start ordering
+also use the JAR. SAX, entity rejection and decompression/record limits remain
+native. Thirty-three captured fixtures preserve the parser output contract.
+
+To update it, build the shared core and run its
+`node scripts/distribute.cjs install-jvm /absolute/path/to/ottplay-android`, then
+run `./gradlew :core:test :app:assembleDebug`. A normal Android build needs no
+sibling source checkout.
+
+Legacy settings interpretation, provider source/entry admission, favorites and
+resume retention, backup validation/merge and source selection now also use this
+JAR. The app's channel navigator delegates live catalog selection and stale switch
+admission; the progress recorder delegates resume eligibility. DataStore, coroutines,
+OkHttp/URL codecs, credential storage, Media3, DRM and OS controller trust remain
+native effects. Captured adapter fixtures preserve import and state behavior.
+
+The compile SDK is API 37 to satisfy the declared Compose dependencies. The
+minimum Android API remains 26 and target API remains 36. CI installs the
+`platforms;android-37.0` package; phone and TV emulator OS versions are unchanged.
+
+Canonical source: [ottplay-unification/shared-core](https://github.com/open-ott-play/ottplay-unification/tree/main/shared-core).
+Access to the private migration repository is required to rebuild it; pinned
+consumer artifacts remain self-contained and carry source and artifact hashes.

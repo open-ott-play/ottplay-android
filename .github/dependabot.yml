@@ -5,7 +5,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    # OkHttp 5.5.0 requires compileSdk 37; keep the available API 36 SDK.
+    # Keep the qualified networking version until the next transport review.
     ignore:
       - dependency-name: com.squareup.okhttp3:*
         versions: ["5.5.0"]

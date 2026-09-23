@@ -20,19 +20,17 @@ internal class ChannelNavigator(
     private val failed: () -> Unit,
 ) {
     private var channels: List<MediaEntry> = emptyList()
-    private var targetId: String? = null
-    private var generation = 0L
-    private var catalogGeneration = 0L
+    private val policy = play.ott.core.ChannelNavigation()
     private var loadJob: Job? = null
     private var resolveJob: Job? = null
 
     val available: Boolean
-        get() = channels.size > 1 && channels.any { it.id == (targetId ?: currentId()) }
+        get() = policy.available(currentId())
 
     fun currentItemChanged(id: String?) {
         cancelSwitch()
         loadJob?.cancel()
-        val token = ++catalogGeneration
+        val token = policy.beginCatalog()
         if (id == null) {
             channels = emptyList()
             changed()
@@ -42,10 +40,13 @@ internal class ChannelNavigator(
         changed()
         loadJob = scope.launch {
             try {
-                val loaded = loadChannels(id).filter { it.kind == MediaKind.LIVE }.distinctBy { it.id }
+                val loaded = loadChannels(id)
                 ensureActive()
-                if (token == catalogGeneration && currentId() == id) {
-                    channels = loaded.takeIf { entries -> entries.any { it.id == id } } ?: emptyList()
+                val accepted = policy.acceptCatalog(token, id, currentId(), loaded.map {
+                    play.ott.core.ChannelCandidate(it.id, it.kind == MediaKind.LIVE)
+                })
+                if (accepted != null) {
+                    channels = accepted.map { loaded[it] }
                     changed()
                 }
             } catch (e: CancellationException) { throw e }
@@ -54,27 +55,23 @@ internal class ChannelNavigator(
     }
 
     fun step(direction: Int): Boolean {
-        if (!available || direction == 0) return false
-        val index = channels.indexOfFirst { it.id == (targetId ?: currentId()) }
-        if (index < 0) return false
-        val nextIndex = Math.floorMod(index + if (direction > 0) 1 else -1, channels.size)
+        val nextIndex = policy.nextIndex(direction, currentId())
+        if (nextIndex < 0) return false
         val entry = channels[nextIndex]
         resolveJob?.cancel()
-        val token = ++generation
+        val token = policy.beginSwitch(nextIndex)
         val origin = currentId()
         // Advance the target now, rather than when the slow provider resolves its stream link.
-        targetId = entry.id
         changed()
         resolveJob = scope.launch {
             try {
                 val stream = resolve(entry)
                 ensureActive()
-                if (token != generation || currentId() != origin) return@launch
+                if (!policy.canCommit(token, origin, currentId())) return@launch
                 commit(entry, stream)
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) {
-                if (token == generation) {
-                    targetId = null
+                if (policy.fail(token)) {
                     changed()
                     failed()
                 }
@@ -85,16 +82,15 @@ internal class ChannelNavigator(
 
     /** Pause, Stop and a direct UI selection invalidate both cooperative and late callbacks. */
     fun cancelSwitch() {
-        ++generation
+        policy.cancel()
         resolveJob?.cancel()
         resolveJob = null
-        targetId = null
         changed()
     }
 
     fun close() {
         cancelSwitch()
-        ++catalogGeneration
+        policy.beginCatalog()
         loadJob?.cancel()
         channels = emptyList()
     }

@@ -1,128 +1,82 @@
 package play.ott.nativeapp.core
 
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
+import play.ott.core.XtreamAddresses
+import play.ott.core.XtreamCatalogs
+import play.ott.core.XtreamFailure
+import play.ott.core.XtreamFormat
+import play.ott.core.XtreamItem
+import play.ott.core.ProviderValue
+import play.ott.core.XtreamSeriesParent
+import play.ott.core.XtreamLoad
+import play.ott.core.XtreamSource
 import okhttp3.HttpUrl
 
+/** HTTP, URL codec and native model adapter for the common Xtream session. */
 internal class XtreamProvider(private val http: ProviderHttp) {
-    suspend fun load(config: SourceConfig): Catalog {
-        val auth = api(config, null) as? JsonObject ?: throw ProviderException("Invalid Xtream account response")
-        val account = auth["user_info"] as? JsonObject
-        if (account?.string("auth") in setOf("0", "false")) throw ProviderException("Xtream rejected the username or password")
-        val status = account?.string("status").orEmpty()
-        if (status.isNotBlank() && !status.equals("active", true)) throw ProviderException("Xtream account is not active")
-        val serverZone = (auth["server_info"] as? JsonObject)?.string("timezone").orEmpty().ifBlank { "UTC" }
-        val entries = mutableListOf<MediaEntry>()
-        val messages = mutableListOf<CoreMessage>()
-        listOf(Triple("live", "get_live_streams", MediaKind.LIVE), Triple("vod", "get_vod_streams", MediaKind.MOVIE),
-            Triple("series", "get_series", MediaKind.SERIES)).forEach { (type, action, kind) ->
-            // The legacy FOSS provider consumed live_streams/categories directly from player_api.php.
-            // Prefer that complete result when present; standard Xtream servers expose action endpoints.
-            val embeddedLive = if (kind == MediaKind.LIVE) auth["live_streams"] as? JsonArray else null
-            val streams = embeddedLive ?: try { requireArray(api(config, action), "Xtream catalogue") }
-            catch (error: ProviderException) {
-                if (kind == MediaKind.LIVE || error.statusCode !in UNSUPPORTED) throw error
-                messages += CoreMessage(CoreMessageKey.XTREAM_SECTION_UNAVAILABLE, listOf(kind.name, error.statusCode.toString()))
-                return@forEach
-            }
-            val categoryResponse = if (embeddedLive != null) (auth["categories"] as? JsonArray ?: JsonArray(emptyList()))
-                else try { requireArray(api(config, "get_${type}_categories"), "Xtream categories") }
-                catch (error: ProviderException) {
-                    if (error.statusCode !in UNSUPPORTED) throw error
-                    messages += CoreMessage(CoreMessageKey.XTREAM_GROUPS_UNAVAILABLE, listOf(kind.name, error.statusCode.toString()))
-                    JsonArray(emptyList())
-                }
-            val categories = categoryResponse.objects().associate { it.string("category_id") to it.string("category_name") }
-            streams.objects().forEach item@ { item ->
-                val id = item.string(if (kind == MediaKind.SERIES) "series_id" else "stream_id")
-                if (id.isBlank()) return@item
-                val name = item.string("name").ifBlank { "Untitled $type" }
-                val direct = item.string("direct_source")
-                val url = when {
-                    kind == MediaKind.SERIES -> ""
-                    direct.isNotBlank() -> resolveHttp(config.url, direct)
-                    else -> streamUrl(config, if (kind == MediaKind.MOVIE) "movie" else "live", id,
-                        extension(item.string("container_extension"), if (kind == MediaKind.LIVE) "m3u8" else "mp4"))
-                }
-                val archiveDays = item.string("tv_archive_duration").toDoubleOrNull() ?: 0.0
-                val catchup = if (kind == MediaKind.LIVE && archiveDays > 0 && item.string("tv_archive") in setOf("1", "true"))
-                    Catchup("xtream", archiveTemplate(config, id), archiveDays, serverZone) else null
-                val epgId = if (kind == MediaKind.LIVE) item.string("epg_channel_id").ifBlank { id } else ""
-                entries += MediaEntry(stableId(config.id, type, id), config.id, name, url, kind,
-                    group = categories[item.string("category_id")].orEmpty().ifBlank { "Other" },
-                    logo = resolveHttp(config.url, item.string("stream_icon").ifBlank { item.string("cover") }), epgId = epgId,
-                    headers = config.headers, catchup = catchup, description = item.string("plot"), providerId = id,
-                    headerOrigins = headerOrigins(config.headers, config.url),
-                    nameMessage = if (item.string("name").isBlank()) CoreMessage(CoreMessageKey.UNTITLED, listOf(type)) else null,
-                    groupMessage = if (categories[item.string("category_id")].isNullOrBlank()) CoreMessage(CoreMessageKey.OTHER_GROUP) else null)
-                if (entries.size > 100_000) throw ProviderException("Xtream catalogue contains more than 100,000 entries")
-            }
+    suspend fun load(config: SourceConfig): Catalog = translateFailure {
+        val addresses = addresses(config)
+        val load = XtreamLoad(source(config), addresses, { resolveHttp(config.url, it) }, { stableId(*it.toTypedArray()) })
+        val session = load.session
+        while (true) {
+            val request = session.request ?: break
+            try { session.accept(parseProviderJson(http.get(addresses.api(request), config.headers).text()).toProviderValue()) }
+            catch (error: ProviderException) { if (!session.reject(error.statusCode)) throw error }
         }
-        val epg = if (config.epgUrl.isNotBlank()) httpUrl(config.epgUrl).toString() else apiUrl(config, "xmltv.php").toString()
-        return Catalog(entries.distinctBy { it.id }, listOf(epg), messages.map { it.english() }, messages)
+        val normalized = load.catalog()
+        val entries = normalized.entries.map { item(it, config, session.timezone) }
+        val epg = if (config.epgUrl.isNotBlank()) httpUrl(config.epgUrl).toString() else addresses.epg()
+        val messages = session.notices.map { notice -> CoreMessage(
+            if (notice.code == "GROUPS") CoreMessageKey.XTREAM_GROUPS_UNAVAILABLE else CoreMessageKey.XTREAM_SECTION_UNAVAILABLE,
+            listOf(notice.kind, notice.status.toString())) }
+        Catalog(entries, listOf(epg), messages.map { it.english() }, messages)
     }
 
-    suspend fun episodes(config: SourceConfig, series: MediaEntry): List<MediaEntry> {
-        val seriesId = series.providerId.ifBlank { throw ProviderException("Series identifier is missing") }
-        val response = api(config, "get_series_info", mapOf("series_id" to seriesId)) as? JsonObject
-            ?: throw ProviderException("Invalid Xtream series response")
-        val episodes = response["episodes"]
-        val result = mutableListOf<MediaEntry>()
-        val seasons: List<Pair<String, JsonArray>> = when (episodes) {
-            is JsonObject -> episodes.mapNotNull { (season, value) -> (value as? JsonArray)?.let { season to it } }
-            is JsonArray -> listOf("0" to episodes)
-            else -> throw ProviderException("Xtream returned no episode list")
-        }
-        seasons.forEach { (season, list) -> list.objects().forEach episode@ { item ->
-            val id = item.string("id").ifBlank { item.string("stream_id") }
-            if (id.isBlank()) return@episode
-            val info = item["info"] as? JsonObject
-            val direct = item.string("direct_source")
-            val url = direct.takeIf(String::isNotBlank)?.let { resolveHttp(config.url, it) }
-                ?: streamUrl(config, "series", id, extension(item.string("container_extension"), "mp4"))
-            result += MediaEntry(
-                id = stableId(config.id, "episode", id), sourceId = config.id,
-                name = item.string("title").ifBlank { "Episode ${item.string("episode_num").ifBlank { id }}" },
-                url = url, kind = MediaKind.EPISODE, group = series.name,
-                logo = resolveHttp(config.url, info?.string("movie_image").orEmpty()).ifBlank { series.logo },
-                headers = config.headers, description = info?.string("plot").orEmpty(),
-                headerOrigins = headerOrigins(config.headers, config.url),
-                nameMessage = if (item.string("title").isBlank()) CoreMessage(CoreMessageKey.EPISODE, listOf(item.string("episode_num").ifBlank { id })) else null,
-                season = item.int("season") ?: season.toIntOrNull(), episode = item.int("episode_num"), providerId = id,
-            )
-            if (result.size > 100_000) throw ProviderException("Series contains too many episodes")
-        } }
-        return result.distinctBy { it.id }.sortedWith(compareBy<MediaEntry> { it.season ?: 0 }.thenBy { it.episode ?: 0 })
+    suspend fun episodes(config: SourceConfig, series: MediaEntry): List<MediaEntry> = translateFailure {
+        val id = series.providerId
+        val addresses = addresses(config)
+        val request = XtreamCatalogs.seriesRequest(ProviderValue.text(id), "", XtreamFormat.ANDROID)
+        val data = parseProviderJson(http.get(addresses.api(request), config.headers).text()).toProviderValue()
+        XtreamCatalogs.episodes(data, XtreamFormat.ANDROID, source(config), addresses,
+            XtreamSeriesParent(id, series.name, series.logo), { resolveHttp(config.url, it) }, { it },
+            { stableId(*it.toTypedArray()) }).entries.map { item(it, config, "UTC") }
     }
 
-    private fun base(config: SourceConfig): HttpUrl {
+    private fun source(config: SourceConfig) = XtreamSource(config.id, config.username, config.password)
+    private fun addresses(config: SourceConfig): XtreamAddresses {
         val input = httpUrl(config.url)
-        val segments = input.pathSegments.filter(String::isNotBlank).toMutableList()
-        if (segments.lastOrNull() in setOf("player_api.php", "get.php", "xmltv.php")) segments.removeAt(segments.lastIndex)
-        return input.newBuilder().encodedPath("/").query(null).fragment(null).apply { segments.forEach { addPathSegment(it) } }.build()
+        val base = input.newBuilder().encodedPath("/").query(null).fragment(null).apply {
+            XtreamAddresses.nativeBaseSegments(input.pathSegments).forEach { addPathSegment(it) }
+        }.build()
+        return XtreamAddresses(source(config), { path, query -> base.newBuilder().apply {
+            path.forEach { addPathSegment(it) }; query.forEach { (key, value) -> addQueryParameter(key, value) }
+        }.build().toString() }, { value ->
+            HttpUrl.Builder().scheme("https").host("template.invalid").addPathSegment(value).build().encodedPath.removePrefix("/")
+        })
     }
-
-    private fun apiUrl(config: SourceConfig, file: String = "player_api.php", action: String? = null, params: Map<String, String> = emptyMap()): HttpUrl =
-        base(config).newBuilder().addPathSegment(file).addQueryParameter("username", config.username)
-            .addQueryParameter("password", config.password).apply {
-                action?.let { addQueryParameter("action", it) }; params.forEach { (key, value) -> addQueryParameter(key, value) }
-            }.build()
-
-    private suspend fun api(config: SourceConfig, action: String?, params: Map<String, String> = emptyMap()): JsonElement =
-        parseProviderJson(http.get(apiUrl(config, action = action, params = params).toString(), config.headers).text())
-
-    private fun streamUrl(config: SourceConfig, type: String, id: String, ext: String): String = base(config).newBuilder()
-        .addPathSegment(type).addPathSegment(config.username).addPathSegment(config.password).addPathSegment("$id.$ext").build().toString()
-
-    private fun archiveTemplate(config: SourceConfig, id: String): String {
-        val prefix = base(config).newBuilder().addPathSegment("timeshift").addPathSegment(config.username)
-            .addPathSegment(config.password).build().toString().trimEnd('/')
-        val encodedId = HttpUrl.Builder().scheme("https").host("template.invalid").addPathSegment("$id.ts").build().encodedPath
-        return "$prefix/{durationMinutes}/{startDate}$encodedId"
+    private fun item(entry: XtreamItem, config: SourceConfig, zone: String): MediaEntry {
+        val kind = when (entry.kind) { "vod" -> MediaKind.MOVIE; "series" -> MediaKind.SERIES; "episode" -> MediaKind.EPISODE; else -> MediaKind.LIVE }
+        return MediaEntry(entry.id, config.id, entry.name, entry.url, kind, group = entry.group, logo = entry.logo,
+            epgId = entry.epgId, headers = config.headers,
+            catchup = entry.archiveDays?.let { Catchup("xtream", entry.archiveSource, it, zone) },
+            description = entry.description, season = entry.season.toIntOrNull(), episode = entry.episode?.toInt(),
+            providerId = entry.providerId, headerOrigins = headerOrigins(config.headers, config.url),
+            nameMessage = if (entry.generatedName.isEmpty()) null else CoreMessage(
+                if (kind == MediaKind.EPISODE) CoreMessageKey.EPISODE else CoreMessageKey.UNTITLED, listOf(entry.generatedName)),
+            groupMessage = if (entry.generatedGroup) CoreMessage(CoreMessageKey.OTHER_GROUP) else null)
     }
-
-    private fun extension(candidate: String, default: String): String = candidate.takeIf { it.matches(Regex("[A-Za-z0-9]{1,8}")) } ?: default
-
-    companion object { private val UNSUPPORTED = setOf(404, 405, 501) }
+    private suspend fun <T> translateFailure(block: suspend () -> T): T = try { block() } catch (failure: XtreamFailure) {
+        throw ProviderException(when (failure.code) {
+            "ACCOUNT_FORMAT" -> "Invalid Xtream account response"
+            "AUTH" -> "Xtream rejected the username or password"
+            "INACTIVE" -> "Xtream account is not active"
+            "CATEGORY_FORMAT" -> "Xtream categories has an unexpected format"
+            "CATALOG_FORMAT" -> "Xtream catalogue has an unexpected format"
+            "CATALOG_LIMIT" -> "Xtream catalogue contains more than 100,000 entries"
+            "SERIES_ID" -> "Series identifier is missing"
+            "SERIES_FORMAT" -> "Invalid Xtream series response"
+            "EPISODES_FORMAT" -> "Xtream returned no episode list"
+            "EPISODES_LIMIT" -> "Series contains too many episodes"
+            else -> "Provider returned an unsupported response"
+        })
+    }
 }

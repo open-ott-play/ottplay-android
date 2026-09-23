@@ -37,7 +37,7 @@ jobs:
         with:
           packages: platform-tools
       - name: Install compile SDK
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+        run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
       - name: Test release tooling without signing credentials
         env:
           PYTHONDONTWRITEBYTECODE: '1'
@@ -130,7 +130,7 @@ jobs:
         with:
           packages: platform-tools
       - name: Install compile SDK
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+        run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
       - name: Install emulator and system image
         run: sdkmanager "emulator" "$CI_SYSTEM_IMAGE"
       - name: Build test APKs before starting the emulator
