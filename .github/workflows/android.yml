@@ -59,6 +59,7 @@ jobs:
       - name: Test, lint and assemble
         run: ./gradlew --no-daemon --stacktrace :core:test :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:assembleFull :app:assembleDebugAndroidTest
       - name: Upload debug APK and unsigned release APK/AAB
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ottplay-native-apks
@@ -68,7 +69,7 @@ jobs:
             app/build/outputs/bundle/release/app-release.aab
             app/build/outputs/apk/full/app-full-unsigned.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
       - name: Upload test and lint reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -82,12 +83,14 @@ jobs:
             app/build/reports/lint-results-debug.*
             app/build/reports/lint-results-release.*
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: ${{ job.status == 'success' && 1 || 3 }}
 
   emulator:
     name: Instrumented tests · ${{ matrix.device }}
+    # Run the full device matrix on integration commits, not again on every PR update.
+    # release.py still requires both successful OS jobs for the exact release SHA.
     if: >-
-      ${{ (github.event_name == 'push' || github.event_name == 'pull_request' ||
+      ${{ (github.event_name == 'push' ||
       github.event_name == 'merge_group' || inputs.run_device_tests) &&
       (needs.scope.outputs.run != 'false' || needs.scope.outputs.reason != 'documentation-only') }}
     needs: [scope, build]
@@ -186,4 +189,4 @@ jobs:
             app/build/outputs/androidTest-results/
             ${{ env.CI_EMULATOR_DIAGNOSTICS }}/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: ${{ job.status == 'success' && 1 || 3 }}
