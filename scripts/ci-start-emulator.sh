@@ -38,8 +38,10 @@ nohup "$ANDROID_HOME/emulator/emulator" -avd "$CI_AVD_NAME" -port 5554 \
 emulator_pid=$!
 printf '%s\n' "$emulator_pid" > "$CI_EMULATOR_DIAGNOSTICS/emulator.pid"
 
-# sys.boot_completed can precede Android TV's package/input services and an ADB
-# reconnect. Retry only framework setup; Gradle runs once in the next CI step.
+# sys.boot_completed can precede the launcher and an ADB reconnect. Do not probe
+# input with a key here: dispatching MENU before the launcher has a focused window
+# can trigger a launcher ANR whose system dialog steals focus from every UI test.
+# Retry only framework setup; Gradle runs once in the next CI step.
 boot_deadline=$((SECONDS + 600))
 while (( SECONDS < boot_deadline )); do
   if ! kill -0 "$emulator_pid" 2>/dev/null; then
@@ -51,11 +53,10 @@ while (( SECONDS < boot_deadline )); do
      [[ "$(timeout 10s adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == '1' ]] &&
      timeout 10s adb -s emulator-5554 shell pm path android > "$CI_EMULATOR_DIAGNOSTICS/package-readiness.log" 2>&1 &&
      grep -q '^package:' "$CI_EMULATOR_DIAGNOSTICS/package-readiness.log" &&
-     timeout 15s adb -s emulator-5554 shell input keyevent 82 >> "$CI_EMULATOR_DIAGNOSTICS/input-readiness.log" 2>&1 &&
      timeout 10s adb -s emulator-5554 shell settings put global window_animation_scale 0.0 &&
      timeout 10s adb -s emulator-5554 shell settings put global transition_animation_scale 0.0 &&
      timeout 10s adb -s emulator-5554 shell settings put global animator_duration_scale 0.0; then
-    echo 'Android boot, package manager, input service and animation settings are ready.'
+    echo 'Android boot, package manager and animation settings are ready.'
     timeout 10s adb -s emulator-5554 shell getprop > "$CI_EMULATOR_DIAGNOSTICS/device-properties.txt"
     if [[ -n "${CI_AVD_DISPLAY:-}" ]]; then
       python3 scripts/ci-emulator-display.py verify \
@@ -65,6 +66,8 @@ while (( SECONDS < boot_deadline )); do
     if [[ "${CI_STABILIZE_GUEST:-false}" == 'true' ]]; then
       python3 scripts/ci-wait-for-guest-idle.py
     fi
+    timeout 10s adb -s emulator-5554 shell wm dismiss-keyguard
+    python3 scripts/ci-wait-for-launcher.py
     exit 0
   fi
   sleep 2
