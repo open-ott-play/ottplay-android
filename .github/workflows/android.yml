@@ -22,8 +22,9 @@ concurrency:
 
 jobs:
   scope:
-    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/change-scope.yml@dc291e8c6635d8a0c5d2cc33a4ffd83d1956625b
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/change-scope.yml@ea1f1af3c3fc18142044314daf85cdd8c72e0a3c
     with:
+      runner: ${{ vars.CI_RUNNER_MODE == 'k3s' && 'ottplay-k3s-linux-x64' || 'ubuntu-latest' }}
       force-full: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
       documentation-paths: '["store/README.md"]'
       required-paths: '["docs/privacy-policy.md"]'
@@ -32,17 +33,23 @@ jobs:
     name: Unit tests, lint and APKs
     needs: scope
     if: ${{ needs.scope.outputs.run != 'false' || needs.scope.outputs.reason != 'documentation-only' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_RUNNER_MODE == 'k3s' && 'ottplay-k3s-linux-x64' || 'ubuntu-24.04' }}
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check self-hosted runner prerequisites
+        if: vars.CI_RUNNER_MODE == 'k3s'
+        run: python3 scripts/ci-runner-preflight.py base
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - name: Prepare an isolated writable Android SDK
+        if: vars.CI_RUNNER_MODE == 'k3s'
+        run: python3 scripts/ci-runner-preflight.py prepare-sdk
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           packages: platform-tools
@@ -94,7 +101,7 @@ jobs:
       github.event_name == 'merge_group' || inputs.run_device_tests) &&
       (needs.scope.outputs.run != 'false' || needs.scope.outputs.reason != 'documentation-only') }}
     needs: [scope, build]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_RUNNER_MODE == 'k3s' && 'ottplay-k3s-kvm-x64' || 'ubuntu-24.04' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -131,17 +138,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check self-hosted runner prerequisites
+        if: vars.CI_RUNNER_MODE == 'k3s'
+        run: python3 scripts/ci-runner-preflight.py emulator
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
       - name: Reserve disk space for the ephemeral emulator
+        if: vars.CI_RUNNER_MODE != 'k3s'
         run: |
           # This Kotlin-only project does not use the runner's preinstalled NDK/CMake.
           # Keep SDK platforms and build tools; TV images and userdata need the space.
           sudo rm -rf -- "${ANDROID_HOME:?}/ndk" "${ANDROID_HOME:?}/cmake"
           df -h "$ANDROID_HOME"
+      - name: Prepare an isolated writable Android SDK
+        if: vars.CI_RUNNER_MODE == 'k3s'
+        run: python3 scripts/ci-runner-preflight.py prepare-sdk
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           packages: platform-tools
@@ -149,10 +163,14 @@ jobs:
         run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
       - name: Install emulator and system image
         run: sdkmanager "emulator" "$CI_SYSTEM_IMAGE"
+      - name: Verify emulator acceleration on the self-hosted image
+        if: vars.CI_RUNNER_MODE == 'k3s'
+        run: '"$ANDROID_HOME/emulator/emulator" -accel-check'
       - name: Build test APKs before starting the emulator
         # Release compiler memory before the guest boots on the shared runner.
         run: ./gradlew --no-daemon --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Enable KVM for the ephemeral emulator runner
+        if: vars.CI_RUNNER_MODE != 'k3s'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules

@@ -22,7 +22,7 @@ jobs:
   build:
     name: Verify and sign ${{ inputs.channel }}
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_RUNNER_MODE == 'k3s' && 'ottplay-k3s-release-x64' || 'ubuntu-24.04' }}
     timeout-minutes: 35
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -34,6 +34,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check self-hosted runner prerequisites
+        if: vars.CI_RUNNER_MODE == 'k3s'
+        run: python3 scripts/ci-runner-preflight.py release
       - name: Validate version, immutable tag and exact-commit device matrix
         run: python3 scripts/release.py check --channel "$RELEASE_CHANNEL"
       - name: Read artifact version
@@ -46,6 +49,9 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - name: Prepare an isolated writable Android SDK
+        if: vars.CI_RUNNER_MODE == 'k3s'
+        run: python3 scripts/ci-runner-preflight.py prepare-sdk
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           packages: platform-tools
@@ -98,7 +104,7 @@ jobs:
   publish:
     name: Publish new version
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_RUNNER_MODE == 'k3s' && 'ottplay-k3s-release-x64' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: write
@@ -111,6 +117,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check self-hosted runner prerequisites
+        if: vars.CI_RUNNER_MODE == 'k3s'
+        run: python3 scripts/ci-runner-preflight.py release
       - name: Download only this run's verified signed artifacts
         run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "ottplay-native-$RELEASE_TAG" --dir "build/distributions/$RELEASE_TAG"
       - name: Recheck source, version and checksums; publish without overwriting

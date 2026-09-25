@@ -144,3 +144,6 @@ minimum Android API remains 26 and target API remains 36. CI installs the
 Canonical source: [ottplay-core/shared-core](https://github.com/open-ott-play/ottplay-core/tree/main/shared-core).
 Access to the private core repository is required to rebuild it; pinned
 consumer artifacts remain self-contained and carry source and artifact hashes.
+
+CI placement, isolated SDK setup and k3s/KVM admission are documented in
+[CI-RUNNERS.md](docs/CI-RUNNERS.md).
