@@ -2,14 +2,12 @@
 
 The native app is installed separately as `play.ott.foss.nativeapp`. The older Full and Play apps use different IDs, so Android does not automatically transfer their sandbox, cookies, settings, or passwords. Keep the old installation until you have checked the sources you need.
 
-APK/AAB building and publication were removed from the `ottplay-foss` main branch in [PR #452](https://github.com/open-ott-play/ottplay-foss/pull/452), commit `8fd0762fc587154705293ac034b8fae312014569`. Android builds now live in this repository. The old Android bridges remain there only as compatibility-test fixtures; iOS, web, desktop, and server builds continue in `ottplay-foss`.
-
 ## Transferring sources directly
 
 - For M3U, open the option to add a source by URL and copy your playlist URL, XMLTV URL, and HTTP headers as needed. Select local files again through Android's file picker. Absolute HTTP(S) stream URLs inside the selected file are supported; relative links require an accessible HTTP(S) base playlist URL.
 - For Xtream, copy the server URL, username, and password. The app reads standard action endpoints and the older combined live `player_api.php` response. Live TV availability does not imply movies or series are available; unsupported sections are reported separately.
 - For classic Stalker / MAG, enter a `/c/` portal or an explicit `server/load.php` / `portal.php` endpoint and the MAC address registered with your provider. A `/c/` URL is normalized to `server/load.php` in the same portal directory. Protocol support does not guarantee compatibility with every provider's device and authentication checks.
-- The older FOSS Stalker provider uses a different protocol: JSON-RPC `handshake` / `get_channels`. Enter its complete endpoint, such as `https://portal.example/stalker_portal/api/`. Native import of an older configuration preserves this protocol choice.
+- For Stalker JSON-RPC `handshake` / `get_channels`, use the JSON-RPC endpoint. Enter its complete endpoint, such as `https://portal.example/stalker_portal/api/`. Native import of an older configuration preserves this protocol choice.
 
 M3U headers from `#EXTVLCOPT`, `#EXTHTTP`, Kodi `stream_headers`, and the `|Header=Value` URL suffix apply to stream requests. Unsupported control characters and reserved headers are rejected. Supported Kodi DRM-license properties become native Media3 configurations. Unknown formats and request/response transformations are rejected; [DRM.md](DRM.md) documents the contract and device limitations.
 
@@ -39,7 +37,7 @@ Check every source you rely on: catalog loading, several channels in different f
 
 The bundled synthetic video checks local playback without an account or network. Its silent audio track does not establish audible background playback. Use an authorized source with sound to check that behavior.
 
-The native project does not transfer the entire set of proprietary adapters, activation codes, dealer/cloud features, and nonstandard extensions from the older JavaScript player. It implements a limited Widevine/PlayReady/ClearKey configuration import and native DRM-license exchange; [DRM.md](DRM.md) documents the exact contract and rejected formats. The project's own ClearKey CENC DASH fixture was verified with real Android MediaDrm and decoding on test Android images. This does not establish Widevine/PlayReady, hardware DRM levels, or compatibility with paid provider services on physical devices.
+The app supports Widevine/PlayReady/ClearKey configuration import and native DRM-license exchange; [DRM.md](DRM.md) documents the exact contract and rejected formats. The project's own ClearKey CENC DASH fixture was verified with real Android MediaDrm and decoding on test Android images. This does not establish Widevine/PlayReady, hardware DRM levels, or compatibility with paid provider services on physical devices.
 
 ## Installing the signed 0.2 preview
 

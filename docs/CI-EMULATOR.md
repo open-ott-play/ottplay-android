@@ -19,17 +19,9 @@ both dimensions and density by two thirds preserves the 9:20 aspect ratio and
 approximately 411-by-914 dp viewport while reducing framebuffer pixels by 55.6%.
 The Android TV emulator continues to use its TV hardware profile.
 
-This addresses the rendering stall observed in [the post-merge CI run](https://github.com/open-ott-play/ottplay-android/actions/runs/34791952008).
-Nineteen phone tests passed; the two real-Activity playback tests lost focus when
-Android displayed a system-process ANR. The system trace identifies
-`HardwareRenderer.nBuildLayer` in `ImmersiveModeConfirmation`, with 86.73% guest
-CPU pressure. The startup idle gate had already completed at 9.83% CPU pressure,
-so extending that initial wait does not address the later rendering spike.
-
 `scripts/ci-emulator-display.py` replaces the AVD's physical dimensions, density,
 and skin settings before boot. It then reads `wm size` and `wm density` and
 requires the expected physical configuration with no runtime display overrides.
-The [Android emulator supports 280 dpi](https://android.googlesource.com/platform/external/qemu/+/emu-master-qemu/android/android-emu/android/hw-lcd.h).
 The setup uses AVD properties instead of the [deprecated display command-line options](https://developer.android.com/studio/run/emulator-commandline#deprecated).
 
 The device-report artifact records the AVD configuration, display verification,
