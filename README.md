@@ -84,6 +84,8 @@ Migration from the older app is described in [docs/MIGRATION.md](docs/MIGRATION.
 
 Device jobs compile their APKs before booting Android and limit the remaining Gradle process to one worker and a 1536 MB heap. The Google APIs phone uses 3072 MB RAM and must sustain 30 seconds below the configured guest CPU/memory/I/O pressure thresholds within five minutes before tests start. The userdebug emulator's `su` reads those protected pressure files; the ADB daemon, app, and instrumentation retain their normal privileges. Pressure samples and system ANR reports are retained as diagnostics; a readiness timeout or failing test fails the job. The TV image retains 2048 MB RAM.
 
+Boot readiness never injects keys into an unfinished launcher. After guest stabilization, CI dismisses the emulator keyguard through Window Manager and waits for the resolved HOME activity's window to hold focus. An ANR or crash dialog fails startup instead of being dismissed or allowed to intercept the app's UI tests. Launcher-readiness evidence and final window/input dumps are retained with each device report.
+
 ## Authoring language
 
 Write code comments, documentation, commit messages, and pull-request text in English. Preserve UI translations, language choices, and external or provider data in their original languages.

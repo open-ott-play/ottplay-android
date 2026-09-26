@@ -169,6 +169,8 @@ jobs:
           mkdir -p "$CI_EMULATOR_DIAGNOSTICS"
           timeout 15s adb devices -l > "$CI_EMULATOR_DIAGNOSTICS/adb-devices.txt" 2>&1 || true
           timeout 20s adb -s emulator-5554 logcat -d > "$CI_EMULATOR_DIAGNOSTICS/logcat.txt" 2>&1 || true
+          timeout 20s adb -s emulator-5554 shell dumpsys window > "$CI_EMULATOR_DIAGNOSTICS/windows.txt" 2>&1 || true
+          timeout 20s adb -s emulator-5554 shell dumpsys input > "$CI_EMULATOR_DIAGNOSTICS/input.txt" 2>&1 || true
           timeout 20s adb -s emulator-5554 shell dumpsys dropbox --print system_server_anr > "$CI_EMULATOR_DIAGNOSTICS/system-server-anr.txt" 2>&1 || true
           timeout 20s adb -s emulator-5554 shell dumpsys dropbox --print system_app_anr > "$CI_EMULATOR_DIAGNOSTICS/system-app-anr.txt" 2>&1 || true
           free -m > "$CI_EMULATOR_DIAGNOSTICS/host-memory.txt"
