@@ -1,42 +1,35 @@
-# Moving a provider to the native app
+# Provider configuration
 
-The native app accepts M3U playlists, Xtream credentials and supported Stalker
-portal contracts. It does not execute the original application's 48 provider
-JavaScript adapters. A provider name alone therefore does not establish feature
-parity: obtain the full playlist URL or server/login contract supplied for your
-subscription. Use the source type that matches that contract.
+The app accepts M3U playlists, Xtream accounts and supported Stalker portal
+contracts. Obtain the complete playlist URL or server/login details supplied
+for your subscription, then choose the matching source type.
 
-Several old adapters already use these standard entry points:
+- **M3U:** supply the complete playlist URL or select a local playlist through
+  Android's file picker. Add the XMLTV URL and required HTTP headers when they
+  are supplied separately. Relative stream links require an accessible HTTP(S)
+  base playlist URL. Catch-up needs supported metadata or an archive duration
+  configured in the source editor.
+- **Xtream:** supply the server URL, username and password. Live TV, movies and
+  series are loaded through their respective API sections; availability of one
+  section does not imply the others are available.
+- **Stalker / MAG:** supply a `/c/` portal or an explicit `server/load.php` or
+  `portal.php` endpoint and the registered MAC address. A `/c/` URL is normalized
+  to `server/load.php` in the same portal directory.
+- **Stalker JSON-RPC:** supply the full endpoint ending in `/api/`. It uses
+  `handshake` and `get_channels`; select it only for services providing that
+  protocol.
 
-- **cbilling and sharavoz:** both construct Xtream `player_api.php` requests from
-  a server, username and password and fall back to a `get.php` playlist. Use
-  **Xtream** with those server credentials, or **M3U** with the full playlist URL.
-  Evidence: [cbilling adapter](https://github.com/open-ott-play/ottplay-foss/blob/8fd0762fc587154705293ac034b8fae312014569/prov/cbilling/prov.js#L155)
-  and [sharavoz adapter](https://github.com/open-ott-play/ottplay-foss/blob/8fd0762fc587154705293ac034b8fae312014569/prov/sharavoz/prov.js#L153).
-- **tvteam:** use **M3U** with the complete provider playlist URL ending in
-  `playlist.m3u8`. The old branded screen also expands a shortened value; the
-  native source editor expects the complete URL. Evidence:
-  [tvteam adapter](https://github.com/open-ott-play/ottplay-foss/blob/8fd0762fc587154705293ac034b8fae312014569/prov/tvteam/prov.js#L32).
-- **antifriz:** the adapter loads a `/playlist/<key>.m3u8` endpoint. Use **M3U**
-  with the complete URL provided by the service. The old adapter also derives
-  tokenized channel/archive URLs; archive parity depends on equivalent supported
-  catchup metadata being supplied. Evidence:
-  [playlist loading](https://github.com/open-ott-play/ottplay-foss/blob/8fd0762fc587154705293ac034b8fae312014569/prov/antifriz/prov.js#L246)
-  and [stream selection](https://github.com/open-ott-play/ottplay-foss/blob/8fd0762fc587154705293ac034b8fae312014569/prov/antifriz/prov.js#L43).
+A provider name or playable HLS URL alone does not specify its account,
+catalog, EPG or catch-up contract. Provider-specific activation, device
+registration and undocumented APIs require separate support. Ask the provider
+for a supported playlist or portal when its account interface cannot be used
+directly.
 
-These paths are derived from repository source, not live tests of a provider's
-current endpoints, subscription or regional access. The examples do not imply
-that account activation, device registration, server selection, provider EPG,
-VOD or archive behavior has been reproduced for every brand.
+The Play and preview builds require HTTPS for remote resources, including
+redirects. The separate Full build also accepts HTTP. See
+[MIGRATION.md](MIGRATION.md) for transferring settings and sources.
 
-For example, **ottclub** uses custom `/api/channel_now` and `/api/channel/<id>`
-responses for its catalog and EPG. Its eventual media URL is HLS, but an HLS
-decoder does not implement those catalog or account contracts. The native app
-does not currently implement that branded API; use a provider-supplied supported
-playlist/portal if available. Evidence: [catalog](https://github.com/open-ott-play/ottplay-foss/blob/8fd0762fc587154705293ac034b8fae312014569/prov/ottclub/prov.js#L144),
-[EPG](https://github.com/open-ott-play/ottplay-foss/blob/8fd0762fc587154705293ac034b8fae312014569/prov/ottclub/prov.js#L159)
-and [stream URL](https://github.com/open-ott-play/ottplay-foss/blob/8fd0762fc587154705293ac034b8fae312014569/prov/ottclub/prov.js#L42).
-
-For protected content, the playlist must also provide one of the explicitly
-supported [native DRM contracts](DRM.md). Provider-specific license challenge
-transformations and undocumented proprietary APIs are not inferred or executed.
+For protected content, the playlist must provide one of the supported
+[native DRM contracts](DRM.md). Provider-specific license challenge
+transformations are not inferred or executed. Validate playback, EPG and
+catch-up using your authorized account on the intended device.

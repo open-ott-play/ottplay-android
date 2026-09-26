@@ -17,7 +17,7 @@ The preview installs alongside the earlier 0.1.0 app. Because its package ID dif
 
 Preview signing and the five `PREVIEW_SIGNING_*` secrets are configured for `open-ott-play/ottplay-android` with the owner's explicit consent. The public certificate SHA-256 is `2021e3c927fff7c42daf395beacbf0ef738c6d878a827091afb48ddaa32c4dd8`.
 
-[Release v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2) was built from original commit `f29a4eb` in [run 34766968610](https://github.com/open-ott-play/ottplay-android/actions/runs/34766968610). Its equivalent revision after translating the documentation history is [7b0eb46](https://github.com/open-ott-play/ottplay-android/commit/7b0eb46b785a00c308b066318eca4e61e3236378). APK/AAB signatures, checksums and verification of the published files are recorded in the [release report](validation/native-0.2-preview-release-results.json); the [history note](HISTORY.md) explains the original build IDs and unchanged artifacts.
+The [release report](validation/native-0.2-preview-release-results.json) records the source build ID, APK/AAB signatures and checksums for [v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2).
 
 `scripts/configure-preview-signing.py` creates a **preview-only** RSA key and stores the keystore and password JSON outside the repository with permissions `0600`. Repeated calls reuse the existing key and check its fingerprint; an incomplete file pair causes an error instead of silent key rotation. The Android SDK debug key is not used. Creating the key and uploading it to GitHub require the owner's explicit authorization.
 
@@ -52,7 +52,7 @@ Omit `--create-new` to validate and reuse an existing pair. Omit `--repository` 
 
 The current source includes all 20 OTT-play FOSS interface languages, follows Android language preferences and falls back to English. The manual picker is under **More / Settings → Language**; **System default** clears the app override. AAB language splitting is disabled so a user can switch to any supported language offline after installation.
 
-Run `python3 scripts/validate-localization.py` to check resource completeness, format arguments and picker/locale agreement. If the FOSS checkout is available, add `--foss-root /path/to/ottplay-foss` to compare its language list. This structural check does not establish translation quality or device behavior.
+Run `python3 scripts/validate-localization.py` to check resource completeness, format arguments and picker/locale agreement. This structural check does not establish translation quality or device behavior.
 
 Before recording reviewer steps or screenshots, select the intended app language explicitly and record it with the candidate's commit and artifact hash. The English walkthrough in [PLAY-CONSOLE-SUBMISSION.md](PLAY-CONSOLE-SUBMISSION.md) uses the current resource labels. Compose instrumentation should use the stable tags `open-settings`, `settings-language`, `language-list` and `language-<tag>` (including `language-system` and `language-he`) rather than Russian or English display text. Existing recordings and validation reports keep their original build and language provenance; they do not validate the new language picker.
 
