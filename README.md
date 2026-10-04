@@ -6,12 +6,12 @@ This is a separate product with application ID `play.ott.foss.nativeapp`. It can
 
 ## Getting started
 
-1. Download the APK from [signed preview v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2) and install it on Android 8.0 / API 26 or later. See the [migration guide](docs/MIGRATION.md#installing-the-signed-02-preview) to transfer settings from an earlier installation.
+1. Download the APK from [signed preview v0.2.1-preview.3](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.1-preview.3) and install it on Android 8.0 / API 26 or later. See the [migration guide](docs/MIGRATION.md#installing-the-signed-02-preview) to transfer settings from an earlier installation.
 2. Choose the demo option. The APK includes an eight-second synthetic video that works offline without an account. Its audio track is silent.
 3. Add your M3U playlist, select a local M3U file, or enter your Xtream or Stalker account details.
 4. Open a channel, movie, or episode. Programme listings can be loaded from the source's or playlist's XMLTV URL.
 
-The linked historical preview predates the 20-language interface. Use a build of the current source to exercise the language picker described here; the old preview is not evidence for that feature.
+The linked preview includes the 20-language interface and is built from commit `88b7944f3028440cca64b49f46140a585656390c`. Later changes on `main` are not included in that APK. Android 4.x / KitKat devices are below the native app's minimum API level; keep their existing player and data instead of trying to replace it with this APK.
 
 The app does not provide a subscription, a built-in commercial catalog, or permission to access sources. Use URLs and accounts you are authorized to access.
 
@@ -33,7 +33,7 @@ Supported Kodi license properties become native Media3 configurations for Widevi
 
 Release and preview enforce HTTPS for remote sources, provider APIs, artwork, EPG, media segments and DRM, including redirects. A separate `full` build (`play.ott.foss.nativeapp.full`) permits HTTP for legacy personal sources; HTTP does not encrypt transmitted data. Debug also permits HTTP for local test fixtures. Settings exports are plain JSON containing source URLs and credentials. Treat an export as a file containing passwords. Local-storage encryption does not encrypt exported files.
 
-The offline privacy policy is available before setup and in settings. The [public privacy policy](https://astral-oasis-sbqd.here.now/) and [Play submission pack](docs/PLAY-CONSOLE-SUBMISSION.md) document current data flows and remaining Console steps. Google Play submission and content rights require separate preparation. The signed preview was published through a dedicated workflow that verifies the version, certificate, and complete phone/TV test matrix. The certificate and future release procedure are documented in [docs/RELEASING.md](docs/RELEASING.md); the [publication report](docs/validation/native-0.2-preview-release-results.json) records the source commit and verified artifacts. Store approval and Android TV certification are not claimed.
+The offline privacy policy is available before setup and in settings. The [public privacy policy](https://astral-oasis-sbqd.here.now/) and [Play submission pack](docs/PLAY-CONSOLE-SUBMISSION.md) document current data flows and remaining Console steps. Google Play submission and content rights require separate preparation. The signed preview was published through a dedicated workflow that verifies the version, certificate, and complete phone/TV test matrix. The certificate and future release procedure are documented in [docs/RELEASING.md](docs/RELEASING.md); the current release assets include `release-manifest.json` and `SHA256SUMS` with exact source and artifact identities. The [historical publication report](docs/validation/native-0.2-preview-release-results.json) applies only to v0.2.0-preview.2. Store approval and Android TV certification are not claimed.
 
 ## Building
 
