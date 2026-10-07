@@ -76,8 +76,6 @@ class ProviderRepository(
 private val providerJson = Json { ignoreUnknownKeys = true }
 internal fun parseProviderJson(text: String): JsonElement = try { providerJson.parseToJsonElement(text) }
     catch (_: Exception) { throw ProviderException("Provider returned invalid JSON") }
-internal fun requireArray(data: JsonElement, context: String): JsonArray = data as? JsonArray
-    ?: throw ProviderException("$context has an unexpected format")
 internal fun JsonObject.string(key: String): String = (get(key) as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content.orEmpty()
 internal fun JsonObject.int(key: String): Int? = string(key).toIntOrNull()
 internal fun JsonArray.objects(): List<JsonObject> = filterIsInstance<JsonObject>()
