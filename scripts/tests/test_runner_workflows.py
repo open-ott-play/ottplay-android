@@ -66,7 +66,10 @@ class WorkflowRoutingTests(unittest.TestCase):
         for job, label in ((android["build"], GENERIC), (android["emulator"], KVM),
                            (release["build"], RELEASE), (release["publish"], RELEASE)):
             self.assertIn("runs-on: " + routed(label, "ubuntu-24.04"), job)
-            sequence = steps(job)
+            hardened = steps(job)
+            self.assertIn("uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed", hardened[0])
+            self.assertIn("egress-policy: audit", hardened[0])
+            sequence = hardened[1:]
             self.assertTrue(sequence[0].startswith("uses: actions/checkout@"))
             self.assertIn("persist-credentials: false", sequence[0])
             self.assertIn("ci-runner-preflight.py", sequence[1])
@@ -78,7 +81,7 @@ class WorkflowRoutingTests(unittest.TestCase):
         self.assertEqual(len(mutations), 2)
         for step in mutations:
             self.assertIn("if: runner.environment == 'github-hosted'", step)
-        self.assertIn("ci-runner-preflight.py emulator", steps(emulator)[1])
+        self.assertIn("ci-runner-preflight.py emulator", next(step for step in steps(emulator) if "ci-runner-preflight.py emulator" in step))
         acceleration = named_step(emulator, "Verify emulator acceleration on the self-hosted image")
         self.assertIn("if: runner.environment == 'self-hosted'", acceleration)
         self.assertIn("-accel-check", acceleration)
