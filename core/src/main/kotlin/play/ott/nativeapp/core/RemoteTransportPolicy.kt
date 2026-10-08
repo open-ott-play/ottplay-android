@@ -24,12 +24,16 @@ class RemoteTransportPolicy(val allowInsecureHttp: Boolean) {
      * before a connection is opened, including a redirect on a platform that allows HTTP.
      */
     fun secure(client: OkHttpClient): OkHttpClient {
-        if (allowInsecureHttp) return client
+        val builder = client.newBuilder()
+        if (TlsCertificateKeyPolicy !in client.networkInterceptors) {
+            builder.addNetworkInterceptor(TlsCertificateKeyPolicy)
+        }
+        if (allowInsecureHttp) return builder.build()
         val guard = Interceptor { chain ->
             if (!chain.request().url.isHttps) throw IOException(HTTPS_REQUIRED)
             chain.proceed(chain.request())
         }
-        return client.newBuilder()
+        return builder
             .addInterceptor(guard)
             .addNetworkInterceptor(guard)
             .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS))

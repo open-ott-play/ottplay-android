@@ -13,6 +13,17 @@ When upgrading from an older build, cached catalogs containing private HTTP head
 
 The preview installs alongside the earlier 0.1.0 app. Because its package ID differs, Android does not transfer the database or Keystore automatically: export sources from the old version and import the file into the preview. The export contains plaintext credentials; keep it local. Later previews can update an existing preview when the same signing key is retained and `versionCode` increases.
 
+## Next release: HTTPS certificate compatibility
+
+The source now rejects an HTTPS origin before sending an HTTP request when
+any certificate in its verified chain uses an undersized or unsupported key.
+This also applies to HTTPS sources in the Full distribution. Existing servers
+with weak leaf, intermediate or root keys must renew the affected chain using
+supported keys; disabling hostname/CA validation or switching to plaintext is
+not a safe workaround. See the [certificate policy and validation scope](security-design.md#https-certificate-key-policy).
+This source change does not update the already published preview APK or its
+version metadata.
+
 ## Stable preview certificate
 
 Preview signing and the five `PREVIEW_SIGNING_*` secrets are configured for `open-ott-play/ottplay-android` with the owner's explicit consent. The public certificate SHA-256 is `2021e3c927fff7c42daf395beacbf0ef738c6d878a827091afb48ddaa32c4dd8`.
