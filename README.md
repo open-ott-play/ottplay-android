@@ -146,3 +146,9 @@ Access to the private core repository is required to rebuild it; pinned
 consumer artifacts remain self-contained and carry source and artifact hashes.
 
 Optional trusted-main k3s runner routing is documented in [CI runner selection](docs/CI-RUNNERS.md).
+
+## Project maintenance
+
+See [contribution and test requirements](CONTRIBUTING.md), the
+[security reporting policy](SECURITY.md), [security design](docs/security-design.md),
+and the [OpenSSF evidence and remaining criteria](docs/openssf-evidence.md).
