@@ -25,6 +25,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import play.ott.nativeapp.OttplayApplication
+import play.ott.nativeapp.playback.TrackPreferences
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,6 +72,7 @@ internal fun NativePlayerPane(
     var controlsVisible by remember { mutableStateOf(false) }
     val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     val context = LocalContext.current
+    val preferenceScope = rememberCoroutineScope()
     val audioTitle = stringResource(R.string.dialog_audio)
     val subtitleTitle = stringResource(R.string.dialog_subtitles)
     val playerDescription = stringResource(R.string.dialog_player_accessibility)
@@ -84,7 +89,26 @@ internal fun NativePlayerPane(
     DisposableEffect(trackType, controller, entry.id) {
         val type = trackType
         val dialog = if (type != null && controller != null && controller.isCommandAvailable(Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS)) {
-            TrackSelectionDialogBuilder(context, if (type == C.TRACK_TYPE_AUDIO) audioTitle else subtitleTitle, controller, type)
+            val parameters = controller.trackSelectionParameters
+            val groups = controller.currentTracks.groups.filter { it.type == type }
+            TrackSelectionDialogBuilder(context, if (type == C.TRACK_TYPE_AUDIO) audioTitle else subtitleTitle, groups) { disabled, overrides ->
+                // An explicit Auto is meaningful even when the preferred language is absent
+                // and the player is already using its automatic fallback.
+                val next = controller.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(type).setTrackTypeDisabled(type, disabled).apply {
+                        overrides.values.forEach(::addOverride)
+                    }.build()
+                controller.trackSelectionParameters = next
+                val choice = TrackPreferences.capture(next, type)
+                val preferences = (context.applicationContext as OttplayApplication).repository.preferences
+                preferenceScope.launch {
+                    preferences.update {
+                        if (type == C.TRACK_TYPE_AUDIO) it.copy(audioTrack = choice)
+                        else it.copy(subtitleTrack = choice)
+                    }
+                }
+            }.setIsDisabled(type in parameters.disabledTrackTypes)
+                .setOverrides(parameters.overrides.filterValues { it.type == type })
                 .setShowDisableOption(type == C.TRACK_TYPE_TEXT).build().apply {
                     setOnDismissListener { trackType = null; if (isTv) nativeView?.focusPlaybackControl() }
                     show()
