@@ -58,3 +58,22 @@ No backup maintainer or tested one-week access-recovery mechanism exists.
 Record each completed analysis with its source SHA, commands/tool versions,
 result and material limitations. Add the repository's actual badge only after
 its own public assessment is saved and verified.
+
+## Release notes and source-history scan (2026-10-16)
+
+All four published previews now have substantive behavior and upgrade notes.
+Preview.4 introduced the explicit HTTPS certificate-key floor; preview.5 closes
+the playlist line-limit bypass. The preview.2 notes preserve the distinction
+between its original build commit and the later documentation-history rewrite.
+These documentation corrections did not replace any release asset or tag.
+See the [published release notes](https://github.com/open-ott-play/ottplay-android/releases).
+
+A default-rule Gitleaks 8.30.1 scan after unshallowing the repository inspected
+85 commits (about 2.37 MB), using `gitleaks git --log-opts=--all`, with no path or detector
+exclusions. Its single finding at `ClearKeyPlaybackInstrumentedTest.kt:251`
+in commit `77f56c8d1945a2c70a03ae618927e8c15dd30ad1` is the public synthetic
+ClearKey used to generate the bundled test media. The adjacent
+`androidTest/assets/` generation instructions describe that key; the test uses
+its local loopback license server and synthetic authorization values. It is not
+an operator credential. No private credential was identified in this scan;
+this does not guarantee detection of arbitrary unknown secret formats.
