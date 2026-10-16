@@ -20,7 +20,9 @@ class DurableSelectionsContractTest {
         fun verify(name: String, block: () -> UserPreferences) {
             val actual = try {
                 val result = block()
-                val digest = java.security.MessageDigest.getInstance("SHA-256").digest(result.toString().toByteArray()).joinToString("") { "%02x".format(it) }
+                // Receipts cover the original durable selections, not later preference fields.
+                val selections = "UserPreferences(selectedSourceId=${result.selectedSourceId}, favorites=${result.favorites}, backgroundPlayback=${result.backgroundPlayback}, resumePositions=${result.resumePositions})"
+                val digest = java.security.MessageDigest.getInstance("SHA-256").digest(selections.toByteArray()).joinToString("") { "%02x".format(it) }
                 listOf(name, "OK", digest)
             } catch (failure: Throwable) { listOf(name, "ERROR", failure.javaClass.name, failure.message.orEmpty()) }
             assertEquals(expected.getValue(name).take(actual.size), actual, name)
