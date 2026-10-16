@@ -25,6 +25,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import play.ott.nativeapp.data.TrackPreference
+import play.ott.nativeapp.playback.TrackPreferences
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,6 +58,7 @@ internal fun NativePlayerPane(
     onPictureInPicture: () -> Unit,
     onStop: () -> Unit,
     onRetry: () -> Unit,
+    onTrackPreference: (Boolean, TrackPreference) -> Unit,
     modifier: Modifier = Modifier,
     inPictureInPicture: Boolean = false,
 ) {
@@ -84,7 +87,20 @@ internal fun NativePlayerPane(
     DisposableEffect(trackType, controller, entry.id) {
         val type = trackType
         val dialog = if (type != null && controller != null && controller.isCommandAvailable(Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS)) {
-            TrackSelectionDialogBuilder(context, if (type == C.TRACK_TYPE_AUDIO) audioTitle else subtitleTitle, controller, type)
+            val parameters = controller.trackSelectionParameters
+            val groups = controller.currentTracks.groups.filter { it.type == type }
+            TrackSelectionDialogBuilder(context, if (type == C.TRACK_TYPE_AUDIO) audioTitle else subtitleTitle, groups) { disabled, overrides ->
+                // An explicit Auto is meaningful even when the preferred language is absent
+                // and the player is already using its automatic fallback.
+                val next = controller.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(type).setTrackTypeDisabled(type, disabled).apply {
+                        overrides.values.forEach(::addOverride)
+                    }.build()
+                controller.trackSelectionParameters = next
+                val choice = TrackPreferences.capture(next, type)
+                onTrackPreference(type == C.TRACK_TYPE_AUDIO, choice)
+            }.setIsDisabled(type in parameters.disabledTrackTypes)
+                .setOverrides(parameters.overrides.filterValues { it.type == type })
                 .setShowDisableOption(type == C.TRACK_TYPE_TEXT).build().apply {
                     setOnDismissListener { trackType = null; if (isTv) nativeView?.focusPlaybackControl() }
                     show()

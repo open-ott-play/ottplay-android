@@ -3,6 +3,7 @@ package play.ott.nativeapp.ui
 import play.ott.nativeapp.core.MediaEntry
 import play.ott.nativeapp.core.Programme
 import play.ott.nativeapp.core.SourceConfig
+import play.ott.nativeapp.data.TrackPreference
 
 /** A presentation snapshot. Network, persistence and playback ownership stay outside Compose. */
 data class AppUiState(
@@ -42,4 +43,5 @@ sealed interface AppAction {
     data object ImportSettings : AppAction
     data object AddDemo : AppAction
     data class SetBackgroundPlayback(val enabled: Boolean) : AppAction
+    data class SetTrackPreference(val audio: Boolean, val preference: TrackPreference) : AppAction
 }

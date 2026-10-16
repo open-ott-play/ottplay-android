@@ -5,8 +5,20 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 
 class SettingsBackupPolicyTest {
+    @Test fun `track preferences round trip and old backups keep automatic defaults`() {
+        val old = Json.decodeFromString<UserPreferences>("{}")
+        assertEquals(TrackPreference(), old.audioTrack)
+        val current = old.copy(audioTrack = TrackPreference("track", "ru"), subtitleTrack = TrackPreference("off"))
+        val restored = Json.decodeFromString<UserPreferences>(Json.encodeToString(current))
+        validateBackupPreferences(restored)
+        assertEquals(current, restored)
+        assertEquals(current.audioTrack, mergeBackupPreferences(old, restored, emptySet()).audioTrack)
+        assertEquals(current.subtitleTrack, mergeBackupPreferences(old, restored, emptySet()).subtitleTrack)
+    }
     @Test fun `restore merges favorites and resume offsets while honoring imported source and background choice`() {
         val old = UserPreferences("old", setOf("favorite-old"), true, mapOf("old-film" to 15_000, "film" to 1_000))
         val backup = UserPreferences("new", setOf("favorite-new"), false, mapOf("film" to 42_000, "episode" to 12_000))
@@ -36,6 +48,9 @@ class SettingsBackupPolicyTest {
             UserPreferences(favorites = setOf("")),
             UserPreferences(selectedSourceId = "bad\nsource"),
             UserPreferences(favorites = setOf("x".repeat(513))),
+            UserPreferences(audioTrack = TrackPreference("track", "bad\nlanguage")),
+            UserPreferences(subtitleTrack = TrackPreference("unexpected")),
+            UserPreferences(subtitleTrack = TrackPreference("track")),
         ).forEach { assertFailsWith<IllegalArgumentException> { validateBackupPreferences(it) } }
         assertTrue(runCatching { validateBackupPreferences(UserPreferences()) }.isSuccess)
     }
