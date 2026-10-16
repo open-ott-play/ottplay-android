@@ -21,10 +21,12 @@ flowchart LR
     E -->|no subtitles| H[Keep subtitles off]
 ```
 
-The existing Android resource catalogs and Media3's localized track dialog supply the labels; this feature adds no English-only UI messages. The service owns applying preferences while the native dialog owns recording explicit user choices. Automatic decoder events never overwrite a saved preference.
+The existing Android resource catalogs and Media3's localized track dialog supply the labels; this feature adds no English-only UI messages. The dialog applies the confirmed choice to the controller and emits an app action; the ViewModel writes it in its own scope, so closing the pane does not cancel persistence. The service applies saved preferences. Automatic decoder events never overwrite a saved preference.
+
+An unlabelled track override takes precedence for its current media item, even when an older preference write or an unrelated subtitle change arrives later. Explicit Auto or another track selection removes that override. A media-item transition always expires it, including when the next stream advertises an equal track group. Releasing the player also cancels preference observation.
 
 ## Verification
 
-Run `./gradlew :app:testDebugUnitTest --tests '*TrackPreferencesTest' --tests '*SettingsBackupPolicyTest' :app:assembleDebug`.
+Run `./gradlew :app:testDebugUnitTest --tests '*TrackPreferencesTest' --tests '*TrackPreferencePlayerTest' --tests '*SettingsBackupPolicyTest' :app:assembleDebug`.
 
-Tests cover reordered tracks, commentary roles, missing-and-returning subtitles, Off/Auto, settings round trips and malformed imports. On a device, select an audio language and subtitles, move to a stream with reversed track order, restart the app, then try a stream without those tracks and choose Auto. This physical playback check remains necessary; unit tests do not prove a stream provider's metadata is correct.
+Tests cover reordered tracks, commentary roles, missing-and-returning subtitles, Off/Auto, late preference acknowledgements, equal-group media transitions, player release, settings round trips and malformed imports. On a device, select an audio language and subtitles, move to a stream with reversed track order, restart the app, then try a stream without those tracks and choose Auto. This physical playback check remains necessary; unit tests do not prove a stream provider's metadata is correct.

@@ -229,6 +229,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             AppAction.DismissNotice -> { noticeText = null; updateState { it.copy(notice = null) } }
             AppAction.StopPlayback -> stop()
             is AppAction.SetBackgroundPlayback -> operation { repository.preferences.update { it.copy(backgroundPlayback = action.enabled) } }
+            is AppAction.SetTrackPreference -> operation {
+                action.preference.validate()
+                repository.preferences.update {
+                    if (action.audio) it.copy(audioTrack = action.preference)
+                    else it.copy(subtitleTrack = action.preference)
+                }
+            }
             AppAction.AddDemo -> operation {
                 val source = NativeRepository.demoSource()
                 repository.save(source)

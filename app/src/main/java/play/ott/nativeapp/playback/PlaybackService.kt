@@ -80,7 +80,7 @@ class PlaybackService : MediaSessionService() {
         val app = application as OttplayApplication
         val repository = app.repository
         val isTelevision = resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
-        val preferencePlayer = TrackPreferencePlayer(exoPlayer, repository.preferences, serviceScope)
+        val preferencePlayer = TrackPreferencePlayer(exoPlayer, repository.preferences.data, serviceScope)
         val foregroundPlayer = if (isTelevision) ForegroundVideoPlayer(preferencePlayer) { app.playbackActivityVisible.value } else preferencePlayer
         progress = PlaybackProgressRecorder(exoPlayer, serviceScope, repository.preferences.resumeWriter)
         var queueSource: SourceConfig? = null

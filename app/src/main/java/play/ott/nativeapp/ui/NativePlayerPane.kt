@@ -25,9 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
-import play.ott.nativeapp.OttplayApplication
+import play.ott.nativeapp.data.TrackPreference
 import play.ott.nativeapp.playback.TrackPreferences
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -60,6 +58,7 @@ internal fun NativePlayerPane(
     onPictureInPicture: () -> Unit,
     onStop: () -> Unit,
     onRetry: () -> Unit,
+    onTrackPreference: (Boolean, TrackPreference) -> Unit,
     modifier: Modifier = Modifier,
     inPictureInPicture: Boolean = false,
 ) {
@@ -72,7 +71,6 @@ internal fun NativePlayerPane(
     var controlsVisible by remember { mutableStateOf(false) }
     val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
     val context = LocalContext.current
-    val preferenceScope = rememberCoroutineScope()
     val audioTitle = stringResource(R.string.dialog_audio)
     val subtitleTitle = stringResource(R.string.dialog_subtitles)
     val playerDescription = stringResource(R.string.dialog_player_accessibility)
@@ -100,13 +98,7 @@ internal fun NativePlayerPane(
                     }.build()
                 controller.trackSelectionParameters = next
                 val choice = TrackPreferences.capture(next, type)
-                val preferences = (context.applicationContext as OttplayApplication).repository.preferences
-                preferenceScope.launch {
-                    preferences.update {
-                        if (type == C.TRACK_TYPE_AUDIO) it.copy(audioTrack = choice)
-                        else it.copy(subtitleTrack = choice)
-                    }
-                }
+                onTrackPreference(type == C.TRACK_TYPE_AUDIO, choice)
             }.setIsDisabled(type in parameters.disabledTrackTypes)
                 .setOverrides(parameters.overrides.filterValues { it.type == type })
                 .setShowDisableOption(type == C.TRACK_TYPE_TEXT).build().apply {

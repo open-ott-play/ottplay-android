@@ -3,6 +3,7 @@ package play.ott.nativeapp.playback
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.TrackSelectionParameters
@@ -10,11 +11,13 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import play.ott.nativeapp.data.PreferencesStore
 import play.ott.nativeapp.data.TrackPreference
+import play.ott.nativeapp.data.UserPreferences
 
 @UnstableApi
 internal object TrackPreferences {
@@ -65,22 +68,28 @@ internal object TrackPreferences {
 @UnstableApi
 internal class TrackPreferencePlayer(
     private val delegate: Player,
-    preferences: PreferencesStore,
+    preferences: Flow<UserPreferences>,
     scope: CoroutineScope,
 ) : ForwardingPlayer(delegate) {
     private var choices = listOf(TrackPreference(), TrackPreference())
     private val currentStreamOverrides = mutableMapOf<Int, TrackSelectionOverride>()
+    private val preferenceJob: Job
     private val trackListener = object : Player.Listener {
         override fun onTracksChanged(tracks: Tracks) { apply(tracks) }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            currentStreamOverrides.clear()
+            apply(delegate.currentTracks)
+        }
     }
 
     init {
         delegate.addListener(trackListener)
-        scope.launch {
-            preferences.data.map { listOf(it.audioTrack, it.subtitleTrack) }.distinctUntilChanged().collect {
+        preferenceJob = scope.launch {
+            preferences.map { listOf(it.audioTrack, it.subtitleTrack) }.distinctUntilChanged().collect {
                 if (choices != it) {
                     choices = it
-                    currentStreamOverrides.clear()
+                    // An acknowledgement may trail a newer unlabelled selection. Only
+                    // explicit selection changes or a media-item transition retire it.
                     apply(delegate.currentTracks)
                 }
             }
@@ -106,10 +115,17 @@ internal class TrackPreferencePlayer(
             tracks.groups.none { it.mediaTrackGroup == override.mediaTrackGroup }
         }
         val parameters = TrackPreferences.apply(delegate.trackSelectionParameters, tracks, choices).buildUpon().apply {
-            currentStreamOverrides.values.forEach(::setOverrideForType)
+            currentStreamOverrides.values.forEach {
+                setTrackTypeDisabled(it.type, false)
+                setOverrideForType(it)
+            }
         }.build()
         if (parameters != delegate.trackSelectionParameters) delegate.trackSelectionParameters = parameters
     }
 
-    override fun release() { delegate.removeListener(trackListener); super.release() }
+    override fun release() {
+        preferenceJob.cancel()
+        delegate.removeListener(trackListener)
+        super.release()
+    }
 }
