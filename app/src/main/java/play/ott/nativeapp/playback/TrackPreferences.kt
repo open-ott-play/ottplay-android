@@ -24,14 +24,14 @@ internal object TrackPreferences {
         before.disabledTrackTypes.contains(type) != after.disabledTrackTypes.contains(type) ||
             before.overrides.filterValues { it.type == type } != after.overrides.filterValues { it.type == type }
 
-    private fun language(format: Format): String? = format.language?.let { Util.normalizeLanguageCode(it) }
+    private fun language(value: String?): String? = value?.let { Util.normalizeLanguageCode(it) }
 
     fun capture(parameters: TrackSelectionParameters, type: Int): TrackPreference {
         if (type in parameters.disabledTrackTypes) return TrackPreference("off")
         val override = parameters.overrides.values.firstOrNull { it.type == type && it.trackIndices.isNotEmpty() }
             ?: return TrackPreference()
         val format = override.mediaTrackGroup.getFormat(override.trackIndices.first())
-        val language = language(format)?.takeUnless { it == "und" }
+        val language = language(format.language)?.takeUnless { it == "und" }
             ?.takeIf { it.matches(Regex("[a-zA-Z0-9]{1,8}(-[a-zA-Z0-9]{1,8}){0,7}")) }
         val label = format.label?.takeIf { it.length in 1..128 && it.none(Char::isISOControl) }
         if (language == null && label == null && format.roleFlags == 0) return TrackPreference()
@@ -39,7 +39,7 @@ internal object TrackPreferences {
     }
 
     private fun matches(choice: TrackPreference, format: Format): Boolean =
-        (choice.language == null || choice.language == language(format)) &&
+        (choice.language == null || language(choice.language) == language(format.language)) &&
             (choice.label == null || choice.label == format.label) && choice.roleFlags == format.roleFlags
 
     fun apply(parameters: TrackSelectionParameters, tracks: Tracks, choices: List<TrackPreference>): TrackSelectionParameters {

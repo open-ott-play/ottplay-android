@@ -40,6 +40,16 @@ class TrackPreferencesTest {
         assertFalse(applied.overrides.containsKey(original))
     }
 
+    @Test fun `imported language tags are normalized and unlabelled tracks stay local`() {
+        val group = TrackGroup("audio", audio("ru"), audio("en"))
+        val applied = TrackPreferences.apply(TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT, tracks(group),
+            listOf(TrackPreference("track", "RUS"), TrackPreference()))
+        assertEquals(listOf(0), applied.overrides[group]?.trackIndices?.toList())
+        val unknown = TrackGroup("unknown", audio("und"))
+        val selection = applied.buildUpon().setOverrideForType(TrackSelectionOverride(unknown, 0)).build()
+        assertEquals(TrackPreference(), TrackPreferences.capture(selection, C.TRACK_TYPE_AUDIO))
+    }
+
     @Test fun `commentary role does not replace normal audio in same language`() {
         val group = TrackGroup("audio", audio("en", C.ROLE_FLAG_COMMENTARY), audio("en"))
         val applied = TrackPreferences.apply(TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT, tracks(group),
