@@ -17,6 +17,10 @@ Maintainers aim to acknowledge a private report within 14 days, investigate its
 scope, and agree on remediation and disclosure with the reporter. If no reply
 arrives within 14 days, follow up privately. Confirmed security defects are
 prioritized by impact; critical defects take precedence over feature work.
+Address confirmed critical vulnerabilities in maintained project code
+immediately and other confirmed medium-or-higher vulnerabilities within 60 days
+of public disclosure. Record upstream limitations and practical mitigations;
+documentation alone does not make an unresolved vulnerability fixed.
 
 Security fixes target the current default branch and latest published release,
 where one exists. Older snapshots are not maintained security branches. Release

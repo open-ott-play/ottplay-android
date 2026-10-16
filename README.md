@@ -6,12 +6,12 @@ This is a separate product with application ID `play.ott.foss.nativeapp`. It can
 
 ## Getting started
 
-1. Download the APK from [signed preview v0.2.1-preview.3](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.1-preview.3) and install it on Android 8.0 / API 26 or later. See the [migration guide](docs/MIGRATION.md#installing-the-signed-02-preview) to transfer settings from an earlier installation.
+1. Download the APK from [signed preview v0.2.1-preview.5](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.1-preview.5) and install it on Android 8.0 / API 26 or later. See the [migration guide](docs/MIGRATION.md#installing-the-signed-02-preview) to transfer settings from an earlier installation.
 2. Choose the demo option. The APK includes an eight-second synthetic video that works offline without an account. Its audio track is silent.
 3. Add your M3U playlist, select a local M3U file, or enter your Xtream or Stalker account details.
 4. Open a channel, movie, or episode. Programme listings can be loaded from the source's or playlist's XMLTV URL.
 
-The linked preview includes the 20-language interface and is built from commit `88b7944f3028440cca64b49f46140a585656390c`. Later changes on `main` are not included in that APK. Android 4.x / KitKat devices are below the native app's minimum API level; keep their existing player and data instead of trying to replace it with this APK.
+The linked preview includes the 20-language interface and is built from commit `b34fd3ff8741eac40db78a81864d34771d6b3156`. Later changes on `main` are not included in that APK. Android 4.x / KitKat devices are below the native app's minimum API level; keep their existing player and data instead of trying to replace it with this APK.
 
 The app does not provide a subscription, a built-in commercial catalog, or permission to access sources. Use URLs and accounts you are authorized to access.
 
@@ -38,11 +38,11 @@ The offline privacy policy is available before setup and in settings. The [publi
 
 ## Building
 
-Install JDK 17 and the Android SDK with platform 36, build-tools 36.0.0, and platform-tools. The Gradle Wrapper is included. Set the SDK location with `ANDROID_HOME` or a local `local.properties` file; do not commit personal paths or signing keys.
+Install JDK 17 and the Android SDK with `platforms;android-37.0`, `build-tools;36.0.0`, and `platform-tools`. The minimum Android API remains 26 and the target API remains 36. The Gradle Wrapper is included. Set the SDK location with `ANDROID_HOME` or a local `local.properties` file; do not commit personal paths or signing keys.
 
-OkHttp is pinned to **5.4.0**, the latest release compatible with compile SDK 36. Version 5.5.0 requires API 37 and is excluded from Dependabot updates until that SDK is available and validated.
+OkHttp remains pinned to **5.4.0** pending a separate transport review and validation of the next version. The current compile SDK is already API 37; SDK availability is not the reason for retaining this pin. See the explicit update policy in `.github/dependabot.yml`.
 
-The project pins Kotlin **2.3.0**, Android Gradle Plugin **9.4.0**, and Gradle **9.7.1**. The Android module uses AGP's built-in Kotlin support; the Kotlin/JVM, Compose compiler and serialization plugins remain explicitly configured. The Wrapper sets `distributionSha256Sum` from the [official Gradle 9.7.1 all checksum](https://services.gradle.org/distributions/gradle-9.7.1-all.zip.sha256) to verify the downloaded distribution.
+The project pins Kotlin **2.4.20**, Android Gradle Plugin **9.4.1**, and Gradle **9.8.1**. The Android module uses AGP's built-in Kotlin support; the Kotlin/JVM, Compose compiler and serialization plugins remain explicitly configured. The Wrapper sets `distributionSha256Sum` from the [official Gradle 9.8.1 all checksum](https://services.gradle.org/distributions/gradle-9.8.1-all.zip.sha256) to verify the downloaded distribution.
 
 ```bash
 ./gradlew :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
@@ -138,13 +138,10 @@ admission; the progress recorder delegates resume eligibility. DataStore, corout
 OkHttp/URL codecs, credential storage, Media3, DRM and OS controller trust remain
 native effects. Adapter fixtures cover import and state behavior.
 
-The compile SDK is API 37 to satisfy the declared Compose dependencies. The
-minimum Android API remains 26 and target API remains 36. CI installs the
-`platforms;android-37.0` package; phone and TV emulator OS versions are unchanged.
-
 Canonical source: [ottplay-core/shared-core](https://github.com/open-ott-play/ottplay-core/tree/main/shared-core).
-Access to the private core repository is required to rebuild it; pinned
-consumer artifacts remain self-contained and carry source and artifact hashes.
+The core repository is public and its original code is MIT licensed. Pinned
+consumer artifacts remain self-contained and carry source and artifact hashes;
+rebuilding requires the corresponding source revision and documented toolchain.
 
 Optional trusted-main k3s runner routing is documented in [CI runner selection](docs/CI-RUNNERS.md).
 
@@ -152,4 +149,6 @@ Optional trusted-main k3s runner routing is documented in [CI runner selection](
 
 See [contribution and test requirements](CONTRIBUTING.md), the
 [security reporting policy](SECURITY.md), [security design](docs/security-design.md),
-and the [OpenSSF evidence and remaining criteria](docs/openssf-evidence.md).
+the [OpenSSF evidence and remaining criteria](docs/openssf-evidence.md),
+[governance](GOVERNANCE.md), [conduct policy](CODE_OF_CONDUCT.md), and
+[maintenance roadmap](ROADMAP.md).

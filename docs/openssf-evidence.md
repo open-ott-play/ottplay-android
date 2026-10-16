@@ -30,13 +30,30 @@ analyzed.
 
 Review every distribution variant against transport/cryptography criteria and record exact device/emulator evidence. Signed release metadata and privacy-policy behavior must match the released APK.
 
-The project maintainer must confirm secure-design/common-error knowledge for
-this project and supply the history of bug, enhancement and vulnerability
-reports across all channels. Confirm actual private-reporting availability and
-review/branch settings. Verify releases have meaningful change/security notes;
-measure test coverage and map static/dynamic analysis to every project-owned
-language. Review each cryptographic criterion individually. Do not transfer
-another repository's attestations, badge identifier or test results here.
+On 2026-10-16 the maintainer confirmed that secure-design/common-error knowledge
+and the absence of outside-GitHub bug, enhancement and vulnerability reports
+over the preceding 12 months apply to this project. The public issue inventory
+contains no non-PR reports, and private vulnerability reporting is enabled.
+The current open code-scanning inventory contains eight Scorecard process
+findings and no CodeQL source finding. Zero open Dependabot alerts are an
+inventory result, not a complete dependency audit.
+
+The current signed preview is
+[v0.2.1-preview.5](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.1-preview.5),
+with version code 5 and source `b34fd3ff8741eac40db78a81864d34771d6b3156`.
+Its public release manifest records the same preview signing certificate as
+the release runbook. This source already includes the exact certificate-key
+policy; later source changes still need separate release qualification.
+
+Review each cryptographic criterion across the complete application, external
+DRM/platform components and build/release tools. Measure whole-source coverage
+and review per-language analysis; a passing host suite or one TLS test matrix
+does not establish all these properties. Do not transfer another repository's
+test results or badge identifier.
+
+[Governance](../GOVERNANCE.md), [conduct rules](../CODE_OF_CONDUCT.md), and the
+[roadmap](../ROADMAP.md) describe present responsibilities and limitations.
+No backup maintainer or tested one-week access-recovery mechanism exists.
 
 Record each completed analysis with its source SHA, commands/tool versions,
 result and material limitations. Add the repository's actual badge only after

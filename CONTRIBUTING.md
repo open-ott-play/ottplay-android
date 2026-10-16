@@ -13,6 +13,10 @@ to protocols, storage, device safety or dependency/runtime requirements before
 making an incompatible change. English is the common language for code review
 and project documentation.
 
+See [governance](GOVERNANCE.md), [conduct rules](CODE_OF_CONDUCT.md), and the
+[maintenance roadmap](ROADMAP.md) for responsibilities, private conduct
+reporting and current priorities.
+
 ## Development and validation
 
 ```sh
