@@ -93,7 +93,8 @@ class ReleaseBoundariesTest(unittest.TestCase):
             keystore.write_bytes(b"synthetic fixture, not a private key")
             env = dict(OTTPLAY_KEYSTORE=str(keystore), OTTPLAY_STORE_PASSWORD="fixture",
                        OTTPLAY_KEY_ALIAS="fixture", OTTPLAY_KEY_PASSWORD="fixture",
-                       OTTPLAY_EXPECTED_CERT_SHA256="b" * 64, ANDROID_HOME=str(root / "sdk"))
+                       OTTPLAY_EXPECTED_CERT_SHA256="b" * 64, ANDROID_HOME=str(root / "sdk"),
+                       GITHUB_ACTIONS="true", GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="2")
             calls = []
             def command(*args, **kwargs):
                 calls.append(args)
@@ -116,6 +117,7 @@ class ReleaseBoundariesTest(unittest.TestCase):
             out = root / "build/distributions/v0.2.0-preview.2"
             manifest = json.loads((out / "release-manifest.json").read_text())
             self.assertEqual(manifest["signingCertificateSha256"], "b" * 64)
+            self.assertEqual((manifest["buildRunId"], manifest["buildRunAttempt"]), (123, 2))
             self.assertEqual(len(manifest["artifacts"]), 2)
             for line in (out / "SHA256SUMS").read_text().splitlines():
                 expected, name = line.split("  ", 1)
@@ -159,6 +161,132 @@ class ReleaseBoundariesTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "checksum changed"):
                     release.publish(info, "example/app")
                 command.assert_not_called()
+
+
+class StablePromotionTest(unittest.TestCase):
+    def setUp(self):
+        self.info = ReleaseBoundariesTest().info() | {"worktreeDirty": False}
+        self.tag = self.info["tag"]
+        self.files = {f"ottplay-native-{self.tag[1:]}.{ext}": b"signed fixture " + ext.encode()
+                      for ext in ("apk", "aab")}
+        self.manifest = self.info | {"signingCertificateSha256": "b" * 64, "buildRunId": 123,
+                                    "buildRunAttempt": 2, "artifacts": [
+            {"name": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+            for name, data in self.files.items()]}
+        self.build_run = dict(head_sha=self.info["commit"], head_branch="main", event="workflow_dispatch",
+                              path=".github/workflows/release.yml", status="completed", conclusion="success", run_attempt=2)
+        self.main_sha = self.info["commit"]
+        self.tag_sha = self.info["commit"]
+        self.extra_asset = False
+        self.corrupt_download = False
+        self.change_on_recheck = False
+        self.commands = []
+
+    def execute(self):
+        payload = self.files | {"release-manifest.json": (json.dumps(self.manifest) + "\n").encode()}
+        payload["SHA256SUMS"] = "".join(f"{hashlib.sha256(data).hexdigest()}  {name}\n" for name, data in payload.items()).encode()
+        assets = [dict(id=index, name=name, size=len(data), updated_at="2026-10-17T00:00:00Z",
+                       digest="sha256:" + hashlib.sha256(data).hexdigest()) for index, (name, data) in enumerate(payload.items())]
+        if self.extra_asset:
+            assets.append(dict(id=99, name="unexpected.apk", size=1, updated_at="2026-10-17T00:00:00Z"))
+        published = dict(id=7, tag_name=self.tag, draft=False, prerelease=True, assets=assets, body="Original preview notes")
+
+        def api(path):
+            if path.endswith("git/ref/heads/main"):
+                return {"object": {"type": "commit", "sha": self.main_sha}}
+            if "/git/ref/tags/" in path:
+                return {"object": {"type": "commit", "sha": self.tag_sha}}
+            if path.endswith("actions/runs/123"):
+                return self.build_run
+            if path.endswith("releases/7") and self.change_on_recheck:
+                return published | {"assets": assets[:-1]}
+            if "/releases/" in path:
+                return published
+            self.fail(f"Unexpected API call: {path}")
+
+        def command(*args, **kwargs):
+            self.commands.append(args)
+            if args[:3] == ("git", "status", "--porcelain"):
+                return ""
+            if args[:3] in (("gh", "release", "download"), ("gh", "run", "download")):
+                destination = Path(args[args.index("--dir") + 1])
+                destination.mkdir(parents=True)
+                for name, data in payload.items():
+                    if self.corrupt_download and args[1] == "release" and name.endswith(".apk"):
+                        data += b"tampered"
+                    (destination / name).write_bytes(data)
+                return ""
+            if args[:4] == ("gh", "api", "--method", "PATCH"):
+                return "{}"
+            self.fail(f"Unexpected command: {args}")
+
+        with patch.object(release, "run", side_effect=command), patch.object(release, "gh", side_effect=api), \
+                patch.object(release, "validate_matrix", side_effect=lambda info, repo: info.update(validatedRun="https://github.com/example/app/actions/runs/42")), \
+                patch.dict(os.environ, {"OTTPLAY_EXPECTED_CERT_SHA256": "b" * 64}, clear=True), contextlib.redirect_stdout(io.StringIO()):
+            release.promote(self.info, "example/app")
+
+    def assert_rejected(self, message):
+        with self.assertRaisesRegex(ValueError, message):
+            self.execute()
+        self.assertFalse(any(command[:4] == ("gh", "api", "--method", "PATCH") for command in self.commands))
+
+    def test_stable_only_changes_release_metadata_after_identical_signed_bytes(self):
+        self.execute()
+        mutations = [command for command in self.commands if command[:4] == ("gh", "api", "--method", "PATCH")]
+        self.assertEqual(len(mutations), 1)
+        self.assertIn("prerelease=false", mutations[0])
+        self.assertIn("make_latest=true", mutations[0])
+        self.assertFalse(any("--tag" in command or "./gradlew" in command or "upload" in command for command in self.commands))
+
+    def test_production_cannot_be_promoted_with_preview_identity(self):
+        self.info["channel"] = "production"
+        self.assert_rejected("existing preview application")
+
+    def test_main_must_still_be_exact_qualified_source(self):
+        self.main_sha = "c" * 40
+        self.assert_rejected("current main")
+
+    def test_tag_must_match_exact_qualified_source(self):
+        self.tag_sha = "c" * 40
+        self.assert_rejected("current source")
+
+    def test_signature_identity_mismatch_is_rejected(self):
+        self.manifest["signingCertificateSha256"] = "c" * 64
+        self.assert_rejected("signing certificate")
+
+    def test_android_identity_mismatch_is_rejected(self):
+        self.manifest["applicationId"] = "play.ott.foss.nativeapp"
+        self.assert_rejected("Android identity")
+
+    def test_missing_build_provenance_is_rejected(self):
+        del self.manifest["buildRunAttempt"]
+        self.assert_rejected("provenance")
+
+    def test_wrong_build_source_event_attempt_or_result_is_rejected(self):
+        for field, value in (("head_sha", "c" * 40), ("head_branch", "other"), ("event", "pull_request"),
+                             ("path", ".github/workflows/other.yml"), ("status", "in_progress"),
+                             ("conclusion", "failure"), ("run_attempt", 3)):
+            with self.subTest(field=field):
+                original = self.build_run[field]
+                self.build_run[field] = value
+                self.assert_rejected("signed-build run")
+                self.build_run[field] = original
+
+    def test_modified_published_apk_is_rejected(self):
+        self.corrupt_download = True
+        self.assert_rejected("differs from its signed-build artifact")
+
+    def test_invalid_artifact_checksum_is_rejected_even_if_copies_match(self):
+        self.manifest["artifacts"][0]["sha256"] = "0" * 64
+        self.assert_rejected("checksum or size")
+
+    def test_extra_assets_are_rejected(self):
+        self.extra_asset = True
+        self.assert_rejected("unexpected asset set")
+
+    def test_concurrent_release_mutation_is_rejected(self):
+        self.change_on_recheck = True
+        self.assert_rejected("changed while validating")
 
 
 if __name__ == "__main__":

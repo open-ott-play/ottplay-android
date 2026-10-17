@@ -2,9 +2,14 @@
 
 The version is stored in `version.properties`: currently `0.2.1`, `versionCode=6`. Increase the version code before every new published preview or production release. The workflow does not move an existing tag, replace a release or overwrite assets.
 
-The two channels use different Android package IDs and certificates:
+Preview and stable share one Android package ID and certificate. The optional
+production application has a separate identity:
 
 - **Preview:** `play.ott.foss.nativeapp.preview`, an R8-optimized APK and a signed AAB; published tag [v0.2.1-preview.5](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.1-preview.5). The final tag component is the `versionCode`. This is a GitHub prerelease for testing, with no store submission.
+- **Stable:** the exact qualified preview APK/AAB, promoted from prerelease to the
+  latest stable GitHub Release. It updates the existing preview installation with
+  the same package ID and signing certificate. The historical tag and Android
+  `versionName` keep their `preview` text; only the release's status and notes change.
 - **Production:** `play.ott.foss.nativeapp`, APK and AAB signed with an explicitly supplied production/upload key; next tag `v0.2.1`. Missing production secrets stop the workflow. Preview/debug key fallback and unsigned APK publication are prohibited.
 
 Both channels enforce HTTPS for remote sources, provider APIs, artwork, EPG, media segments and DRM requests, including redirects. The separate `full` build uses application ID `play.ott.foss.nativeapp.full` and permits HTTP for legacy personal sources. It is built with `./gradlew :app:assembleFull` and is not a Play submission artifact. Debug also permits HTTP for local test fixtures and is not publishable.
@@ -62,6 +67,9 @@ Five repository secrets are required with the `PREVIEW_SIGNING_` prefix: `KEYSTO
 
 ## Upload identity
 
+This section applies only to the separate production application. It is not
+needed for preview → stable updates of the existing preview installation.
+
 For an existing Play app, retain its registered upload key or complete Google's upload-key reset procedure. Never create an unrelated replacement and assume it can update that app. `scripts/configure-upload-signing.py` validates an owner-only keystore/credentials pair, its expected certificate and access to the private key. Debug and preview identities are rejected.
 
 Only after the owner confirms that a new upload identity is appropriate:
@@ -101,6 +109,10 @@ Output is written to `build/distributions/<tag>/`: signed `.apk` and `.aab` file
 
 ## Releasing through GitHub Actions
 
+The normal delivery path for the current application is **preview → stable**.
+`production` remains available for a separately configured application; it does
+not replace an installed preview.
+
 1. Commit the new version and all changes to `main`. **Android native** automatically runs host, phone API 35 and real Android TV API 36 jobs on pushes to `main` and merge-queue commits, except for proven documentation-only changes. Ordinary PR updates run host checks without the emulator matrix. Wait for all three jobs on the exact release commit. If its automatic run was skipped, run **Android native** manually with `run_device_tests=true`; skipped jobs cannot qualify a release. PR and merge-queue runs validate changes but cannot satisfy the publication gate. Ordinary APK artifacts and successful reports expire after one day, and failed/cancelled reports after three; the gate uses successful job records, not downloadable artifacts. Signed release artifacts and reports keep their 30-day retention, and published APK/AAB assets remain attached to the GitHub Release.
 2. Confirm that the five signing secrets for the selected channel are configured. Run **Signed Android release** manually on `main` and select `preview` or `production`.
 3. The workflow checks a clean checkout, matching SHA, an unused tag, increasing version/code and a successful full matrix on the same commit. It then repeats host tests/lint, builds and verifies both signatures, and produces checksums.
@@ -108,6 +120,29 @@ Output is written to `build/distributions/<tag>/`: signed `.apk` and `.aab` file
 5. A separate publish job with `contents: write` downloads only this run's verified assets; it receives no signing secrets. Checks are repeated before publication. A new Git ref is created atomically, a draft release is created with all assets, and the release is then published. A preview is marked as a prerelease and does not become the latest production release.
 
 The script enforces append-only behaviour within its pipeline. It does not change GitHub repository rules or prevent an administrator from manually changing a tag or release. The owner can enable GitHub immutable releases or tag rules for that protection. If upload/publication stops after creating the tag or draft, another run refuses to overwrite it: investigate the cause, then use a new version or explicitly manage the unfinished draft manually.
+
+### Promote the current preview to stable
+
+After the preview workflow has completed successfully, run **Signed Android
+release** again on `main` with `channel=stable`. Keep `main` at the qualified
+preview commit until promotion completes. The job checks the full device matrix,
+the preview tag, package/version/certificate, and the successful signed-build run
+and attempt recorded in its manifest. It downloads both the published assets and
+the original workflow artifact and requires identical bytes, sizes and checksums.
+It then marks that same GitHub Release stable and latest, preserving its tag and
+every asset. No keystore or password is loaded, and no APK/AAB is rebuilt.
+
+Promote within the signed artifact's 30-day retention. If the artifact has expired,
+the source has changed, or an older preview lacks run provenance, publish and
+qualify a new preview with a higher version code. The job fails rather than
+claiming that different or unavailable bytes were verified. Release operations
+share a concurrency group so building and promotion cannot race each other.
+
+Install the stable APK with `adb install -r <apk>`. It updates earlier previews
+signed by the same certificate without uninstalling or migrating app data; when
+that exact preview is already installed, the bytes are already the stable build.
+Keep the signing key for all future preview and stable updates. The separate
+production package remains an independent app.
 
 Signing an APK and AAB does not publish them to Google Play. With Play App Signing, the AAB is signed with an upload key and Google signs user APKs with the app signing key; an APK signed with the upload key may not update an app installed from Play. Store policies, Play Console, ownership of the production identity and physical-device validation remain separate steps. See [Android app signing](https://developer.android.com/studio/publish/app-signing) and the [GitHub Releases API](https://docs.github.com/en/rest/releases/releases).
 

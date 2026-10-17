@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,13 +38,17 @@ def metadata(channel):
                 worktreeDirty=bool(run("git", "status", "--porcelain", capture=True).strip()))
 
 
-def preflight(info, repository):
+def validate_source(info, repository):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Invalid GitHub repository name")
     if run("git", "status", "--porcelain", capture=True).strip():
         raise ValueError("Release requires a clean committed worktree")
     if os.environ.get("GITHUB_SHA", info["commit"]) != info["commit"]:
         raise ValueError("Checked-out commit differs from workflow commit")
+
+
+def preflight(info, repository):
+    validate_source(info, repository)
     # Never move tags, replace releases/assets, or reuse a versionCode in a channel.
     pages = json.loads(run("gh", "api", "--paginate", "--slurp",
                           f"repos/{repository}/tags?per_page=100", capture=True))
@@ -65,6 +70,10 @@ def preflight(info, repository):
             old = dict(line.split("=", 1) for line in base64.b64decode(encoded).decode().splitlines() if "=" in line)
             if info["versionCode"] <= int(old["versionCode"]):
                 raise ValueError("Production versionCode must increase")
+    validate_matrix(info, repository)
+
+
+def validate_matrix(info, repository):
     # The same source commit must already have passed both real OS jobs.
     runs = gh(f"repos/{repository}/actions/workflows/android.yml/runs?head_sha={info['commit']}&status=success&per_page=100")["workflow_runs"]
     required = {"Unit tests, lint and APKs", "Instrumented tests · phone-api35", "Instrumented tests · androidtv-api36"}
@@ -130,6 +139,9 @@ def build(info, credentials):
     out = ROOT / "build/distributions" / info["tag"]
     out.mkdir(parents=True, exist_ok=True)
     info["signingCertificateSha256"] = cert
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        info["buildRunId"] = int(os.environ["GITHUB_RUN_ID"])
+        info["buildRunAttempt"] = int(os.environ["GITHUB_RUN_ATTEMPT"])
     info["artifacts"] = []
     for artifact in (apk, aab):
         destination = out / f"ottplay-native-{info['tag'][1:]}{artifact.suffix}"
@@ -166,9 +178,83 @@ def publish(info, repository):
     run(*args)
 
 
+def promote(info, repository):
+    """Promote the exact signed preview bytes without changing Android identity."""
+    if info["channel"] != "preview":
+        raise ValueError("Stable promotion is supported only for the existing preview application")
+    validate_source(info, repository)
+    validate_matrix(info, repository)
+    prefix = f"repos/{repository}"
+    tag = info["tag"]
+    if gh(f"{prefix}/git/ref/heads/main")["object"]["sha"] != info["commit"]:
+        raise ValueError("Stable promotion requires the current main commit")
+    tagged = gh(f"{prefix}/git/ref/tags/{tag}")["object"]
+    if tagged["type"] != "commit" or tagged["sha"] != info["commit"]:
+        raise ValueError("Preview tag does not identify the current source commit")
+    published = gh(f"{prefix}/releases/tags/{tag}")
+    if published["draft"] or not published["prerelease"]:
+        raise ValueError("Stable promotion requires a published preview prerelease")
+    names = {f"ottplay-native-{tag[1:]}.{extension}" for extension in ("apk", "aab")}
+    files = names | {"release-manifest.json", "SHA256SUMS"}
+    if len(published["assets"]) != len(files) or {item["name"] for item in published["assets"]} != files:
+        raise ValueError("Preview release has an unexpected asset set")
+    with tempfile.TemporaryDirectory(prefix="ottplay-promote-") as directory:
+        downloaded = Path(directory) / "published"
+        original = Path(directory) / "original"
+        run("gh", "release", "download", tag, "--repo", repository, "--dir", str(downloaded))
+        recorded = json.loads((downloaded / "release-manifest.json").read_text())
+        if any(recorded.get(key) != value for key, value in info.items() if key != "validatedRun"):
+            raise ValueError("Preview manifest differs from current source or Android identity")
+        expected_cert = os.environ.get("OTTPLAY_EXPECTED_CERT_SHA256", "").lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_cert) or recorded.get("signingCertificateSha256") != expected_cert:
+            raise ValueError("Preview signing certificate differs from the configured identity")
+        run_id, attempt = recorded.get("buildRunId"), recorded.get("buildRunAttempt")
+        if type(run_id) is not int or type(attempt) is not int or run_id <= 0 or attempt <= 0:
+            raise ValueError("Preview lacks signed-build run provenance; publish a new preview")
+        build_run = gh(f"{prefix}/actions/runs/{run_id}")
+        expected = {"head_sha": info["commit"], "head_branch": "main", "event": "workflow_dispatch",
+                    "path": ".github/workflows/release.yml", "status": "completed", "conclusion": "success",
+                    "run_attempt": attempt}
+        if any(build_run.get(key) != value for key, value in expected.items()):
+            raise ValueError("Preview signed-build run is not successful for this exact source and attempt")
+        run("gh", "run", "download", str(run_id), "--repo", repository, "--name", f"ottplay-native-{tag}", "--dir", str(original))
+        for name in files:
+            if (downloaded / name).read_bytes() != (original / name).read_bytes():
+                raise ValueError("Published preview differs from its signed-build artifact")
+        artifacts = recorded["artifacts"]
+        if len(artifacts) != len(names) or {item["name"] for item in artifacts} != names:
+            raise ValueError("Preview manifest has an unexpected artifact set")
+        for item in artifacts:
+            data = (downloaded / item["name"]).read_bytes()
+            if len(data) != item["bytes"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
+                raise ValueError("Preview artifact checksum or size changed")
+        expected_sums = {f"{hashlib.sha256((downloaded / name).read_bytes()).hexdigest()}  {name}" for name in names | {"release-manifest.json"}}
+        sums = (downloaded / "SHA256SUMS").read_text().splitlines()
+        if len(sums) != len(expected_sums) or set(sums) != expected_sums:
+            raise ValueError("Preview checksum manifest is inconsistent")
+    # Recheck mutable references immediately before changing release metadata.
+    if gh(f"{prefix}/git/ref/heads/main")["object"]["sha"] != info["commit"] or gh(f"{prefix}/git/ref/tags/{tag}")["object"]["sha"] != info["commit"]:
+        raise ValueError("Source changed while validating the preview")
+    current = gh(f"{prefix}/releases/{published['id']}")
+    asset_identity = lambda release: sorted((item["id"], item["name"], item["size"], item.get("digest"), item["updated_at"]) for item in release["assets"])
+    if current["draft"] or not current["prerelease"] or current["tag_name"] != tag or asset_identity(current) != asset_identity(published):
+        raise ValueError("Preview release changed while validating it")
+    notes = (f"Stable release of the existing preview application. Install the APK over an older preview; Android retains its data. "
+             f"Package ID, certificate, versionCode and signed bytes are unchanged from the qualified preview. "
+             f"The historical tag and Android versionName retain `preview` to preserve artifact identity. No Google Play submission.\n\n"
+             f"Source: `{info['commit']}`. VersionCode: {info['versionCode']}.\n\n"
+             f"Full host/phone/TV matrix: {info['validatedRun']}\n\n"
+             f"Signed build: https://github.com/{repository}/actions/runs/{run_id}/attempts/{attempt}\n\n"
+             f"### Original preview notes\n\n{current.get('body') or ''}")
+    run("gh", "api", "--method", "PATCH", f"{prefix}/releases/{published['id']}",
+        "-F", "prerelease=false", "-f", "make_latest=true", "-f", f"name=OTT Play Native {info['baseVersion']} stable (build {info['versionCode']})",
+        "-f", f"body={notes}", capture=True)
+    print(f"Promoted {tag} to stable without rebuilding or replacing assets")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("metadata", "check", "build", "publish"))
+    parser.add_argument("command", choices=("metadata", "check", "build", "publish", "promote"))
     parser.add_argument("--channel", required=True, choices=("preview", "production"))
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--credentials", help="Owner-only local signing JSON; never committed")
@@ -184,8 +270,10 @@ def main():
         print(f"Release preflight passed: {info['tag']} at {info['commit']}")
     elif args.command == "build":
         build(info, args.credentials)
-    else:
+    elif args.command == "publish":
         publish(info, args.repository or "")
+    else:
+        promote(info, args.repository or "")
 
 
 if __name__ == "__main__":
