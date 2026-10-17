@@ -24,6 +24,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = PlaybackTestApplication::class)
 class PlaybackItemsTest {
+    // Exercise the legacy controller IPC format deliberately, including lost local fields.
+    @Suppress("DEPRECATION")
+    private fun legacyIpcRoundTrip(item: MediaItem) = MediaItem.fromBundle(item.toBundle())
+
     @Test
     @Config(shadows = [SupportedMediaDrm::class])
     fun `native container checks accept MIME hints on extensionless protected streams`() {
@@ -37,8 +41,22 @@ class PlaybackItemsTest {
             DrmScheme.PLAYREADY to MimeTypes.APPLICATION_SS)) {
             val item = PlaybackItems.build("opaque", "Protected", "https://video.test/play?id=opaque",
                 drm = DrmConfig(scheme, "https://license.test/acquire"), mimeType = mimeType)
-            PlaybackItems.requireSupported(context, PlaybackItems.resolve(MediaItem.fromBundle(item.toBundle())))
+            PlaybackItems.requireSupported(context, PlaybackItems.resolve(legacyIpcRoundTrip(item)))
         }
+    }
+
+    @Test
+    @Config(shadows = [SupportedMediaDrm::class])
+    fun `legacy television without Leanback retains supported PlayReady playback`() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val packageManager = org.robolectric.Shadows.shadowOf(context.packageManager)
+        packageManager.setSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK, false)
+        // Deliberately calibrate the older TV capability still supported in production.
+        @Suppress("DEPRECATION")
+        packageManager.setSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION, true)
+        val item = PlaybackItems.build("legacy-tv", "Protected", "https://video.test/manifest.mpd",
+            drm = DrmConfig(DrmScheme.PLAYREADY, "https://license.test/acquire"))
+        PlaybackItems.requireSupported(context, item)
     }
 
     /** The unit test simulates scheme availability; real MediaDrm is covered by instrumentation. */
@@ -59,7 +77,7 @@ class PlaybackItemsTest {
             drm = DrmConfig(DrmScheme.WIDEVINE, "https://license.test/acquire?license-secret", headers, multiSession = true),
             mimeType = MimeTypes.APPLICATION_MPD)
         headers["Authorization"] = "mutated"
-        val transported = MediaItem.fromBundle(original.toBundle())
+        val transported = legacyIpcRoundTrip(original)
         assertNull(transported.localConfiguration)
         val rebuilt = PlaybackItems.resolve(transported)
         val native = requireNotNull(rebuilt.localConfiguration?.drmConfiguration)
@@ -86,7 +104,7 @@ class PlaybackItemsTest {
         val missing = original.buildUpon().setRequestMetadata(original.requestMetadata.buildUpon()
             .setExtras(Bundle(original.requestMetadata.extras).apply { remove(PlaybackItems.EXTRA_DRM) }).build()).build()
         assertThrows(IllegalArgumentException::class.java) { PlaybackItems.resolve(missing) }
-        val malformed = MediaItem.fromBundle(original.toBundle())
+        val malformed = legacyIpcRoundTrip(original)
         malformed.requestMetadata.extras!!.getBundle(PlaybackItems.EXTRA_DRM)!!.putString("unexpected", "secret")
         val failure = assertThrows(IllegalArgumentException::class.java) { PlaybackItems.resolve(malformed) }
         assertFalse(failure.message.orEmpty().contains("secret"))

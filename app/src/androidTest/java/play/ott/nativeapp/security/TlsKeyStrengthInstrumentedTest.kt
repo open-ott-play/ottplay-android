@@ -114,7 +114,7 @@ class TlsKeyStrengthInstrumentedTest {
                 try {
                     client.newCall(Request.Builder().url("https://127.0.0.1:${server.port}/probe")
                         .header("Authorization", "Bearer synthetic-key-probe-only").build()).execute().use { response ->
-                        accepted = response.isSuccessful && response.body?.string() == "synthetic-response"
+                        accepted = response.isSuccessful && response.body.string() == "synthetic-response"
                         negotiatedTls = response.handshake?.tlsVersion?.javaName.orEmpty()
                     }
                 } catch (failure: Exception) {
@@ -219,7 +219,7 @@ class TlsKeyStrengthInstrumentedTest {
 
     private fun get(client: OkHttpClient, server: LocalTlsServer): String? = client.newCall(Request.Builder()
         .url("https://127.0.0.1:${server.port}/probe").header("Authorization", "Bearer synthetic-key-probe-only")
-        .build()).execute().use { it.body?.string() }
+        .build()).execute().use { it.body.string() }
 
     private fun assertKeyRejected(client: OkHttpClient, url: String, post: Boolean = false) {
         val request = Request.Builder().url(url).header("Authorization", "Bearer synthetic-key-probe-only")

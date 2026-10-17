@@ -77,7 +77,7 @@ internal fun SourceEditor(
                 }
                 OutlinedTextField(value = name, onValueChange = { enteredName = it; nameWasEdited = true }, label = { Text(stringResource(R.string.dialog_source_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
-                    value = if (localSource) (if (original?.url?.startsWith("content://") == true) stringResource(R.string.dialog_source_local_file) else stringResource(R.string.dialog_source_demo)) else url,
+                    value = if (localSource) (if (original.url.startsWith("content://")) stringResource(R.string.dialog_source_local_file) else stringResource(R.string.dialog_source_demo)) else url,
                     onValueChange = { url = it }, readOnly = localSource,
                     label = { Text(if (kind == SourceKind.M3U) stringResource(R.string.dialog_source_playlist_url) else stringResource(R.string.dialog_source_server_url)) },
                     placeholder = { Text(stringResource(R.string.dialog_source_url_example)) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -128,7 +128,7 @@ internal fun SourceEditor(
                 val hours = if (catchupHours.isBlank()) 0.0 else catchupHours.trim().replace(',', '.').toDoubleOrNull()
                 validation = when {
                     name.isBlank() -> R.string.dialog_validation_name
-                    !isAllowedNetworkUrl(cleanUrl) && !(localSource && cleanUrl == original?.url) ->
+                    !isAllowedNetworkUrl(cleanUrl) && !(localSource && cleanUrl == original.url) ->
                         if (AppTransportPolicy.current.allowInsecureHttp) R.string.dialog_validation_source_http
                         else R.string.dialog_validation_source_https
                     kind == SourceKind.XTREAM && (username.isBlank() || password.isBlank()) -> R.string.dialog_validation_credentials

@@ -38,7 +38,7 @@ class TrackPreferencesTest {
 
     @Test fun `saved language follows reordered tracks instead of saved index`() {
         val original = TrackGroup("old", audio("en"), audio("ru"))
-        val selected = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT.buildUpon()
+        val selected = TrackSelectionParameters.DEFAULT.buildUpon()
             .setOverrideForType(TrackSelectionOverride(original, 1)).build()
         val choice = TrackPreferences.capture(selected, C.TRACK_TYPE_AUDIO)
         val replacement = TrackGroup("new", audio("ru"), audio("en"))
@@ -50,7 +50,7 @@ class TrackPreferencesTest {
 
     @Test fun `imported language tags are normalized and unlabelled tracks stay local`() {
         val group = TrackGroup("audio", audio("ru"), audio("en"))
-        val applied = TrackPreferences.apply(TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT, tracks(group),
+        val applied = TrackPreferences.apply(TrackSelectionParameters.DEFAULT, tracks(group),
             listOf(TrackPreference("track", "RUS"), TrackPreference()))
         assertEquals(listOf(0), applied.overrides[group]?.trackIndices?.toList())
         val unknown = TrackGroup("unknown", audio("und"))
@@ -60,7 +60,7 @@ class TrackPreferencesTest {
 
     @Test fun `commentary role does not replace normal audio in same language`() {
         val group = TrackGroup("audio", audio("en", C.ROLE_FLAG_COMMENTARY), audio("en"))
-        val applied = TrackPreferences.apply(TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT, tracks(group),
+        val applied = TrackPreferences.apply(TrackSelectionParameters.DEFAULT, tracks(group),
             listOf(TrackPreference("track", "en"), TrackPreference()))
         assertEquals(listOf(1), applied.overrides[group]?.trackIndices?.toList())
     }
@@ -68,7 +68,7 @@ class TrackPreferencesTest {
     @Test fun `missing requested subtitles stay off then recover when their language returns`() {
         val choices = listOf(TrackPreference(), TrackPreference("track", "ru"))
         val english = TrackGroup("english", text("en"))
-        val missing = TrackPreferences.apply(TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT, tracks(english), choices)
+        val missing = TrackPreferences.apply(TrackSelectionParameters.DEFAULT, tracks(english), choices)
         assertTrue(C.TRACK_TYPE_TEXT in missing.disabledTrackTypes)
         val russian = TrackGroup("russian", text("ru"))
         val recovered = TrackPreferences.apply(missing, tracks(russian), choices)
@@ -78,7 +78,7 @@ class TrackPreferencesTest {
 
     @Test fun `unavailable or unsupported preferred audio keeps platform fallback enabled`() {
         val original = TrackGroup("old", audio("ru"))
-        val selected = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT.buildUpon()
+        val selected = TrackSelectionParameters.DEFAULT.buildUpon()
             .setOverrideForType(TrackSelectionOverride(original, 0)).build()
         val next = TrackGroup("new", audio("ru"), audio("en", C.ROLE_FLAG_COMMENTARY))
         val available = Tracks(listOf(Tracks.Group(next, false,
@@ -91,7 +91,7 @@ class TrackPreferencesTest {
 
     @Test fun `off persists and auto removes explicit overrides`() {
         val group = TrackGroup("text", text("en"))
-        val parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT.buildUpon()
+        val parameters = TrackSelectionParameters.DEFAULT.buildUpon()
             .setOverrideForType(TrackSelectionOverride(group, 0)).build()
         val off = TrackPreferences.apply(parameters, tracks(group), listOf(TrackPreference(), TrackPreference("off")))
         assertTrue(C.TRACK_TYPE_TEXT in off.disabledTrackTypes)
@@ -108,7 +108,7 @@ class TrackPreferencesTest {
 @Config(sdk = [35], application = PlaybackTestApplication::class)
 class TrackPreferencePlayerTest {
     private class Delegate(group: TrackGroup) {
-        var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
+        var parameters = TrackSelectionParameters.DEFAULT
         var tracks = Tracks(listOf(Tracks.Group(group, false,
             IntArray(group.length) { C.FORMAT_HANDLED }, BooleanArray(group.length))))
         val listeners = mutableListOf<Player.Listener>()

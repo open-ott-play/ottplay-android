@@ -85,12 +85,18 @@ object PlaybackItems {
         }
         require(config.scheme != DrmScheme.PLAYREADY ||
             context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
-            context.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEVISION)) {
+            hasLegacyTelevisionFeature(context)) {
             "PlayReady is supported only on compatible Android TV devices"
         }
         val supported = try { FrameworkMediaDrm.isCryptoSchemeSupported(uuid(config.scheme)) } catch (_: Exception) { false }
         require(supported) { "The device does not support the selected DRM system" }
     }
+
+    // Older Android TV implementations can expose this feature without leanback.
+    // Retain their existing PlayReady capability path until those devices are retired.
+    @Suppress("DEPRECATION")
+    private fun hasLegacyTelevisionFeature(context: Context) =
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEVISION)
 
     internal fun drm(item: MediaItem): DrmConfig? {
         val extras = item.requestMetadata.extras

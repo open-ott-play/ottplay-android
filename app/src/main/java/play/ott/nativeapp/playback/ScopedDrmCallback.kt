@@ -30,21 +30,19 @@ internal class ScopedDrmCallback(
         .addInterceptor { chain ->
             val response = chain.proceed(chain.request())
             val body = response.body
-            if (body == null) response else {
-                // OkHttpDataSource eagerly buffers non-2xx responses inside open(). Bound every
-                // body here, after OkHttp's transparent decompression and before that buffering.
-                val bytes = body.use {
-                    if (it.contentLength() > MAX_LICENSE_BYTES) {
-                        throw IOException("DRM license exceeds the supported size limit")
-                    }
-                    val source = it.source()
-                    if (source.request(MAX_LICENSE_BYTES + 1)) {
-                        throw IOException("DRM license exceeds the supported size limit")
-                    }
-                    source.readByteArray()
+            // OkHttpDataSource eagerly buffers non-2xx responses inside open(). Bound every
+            // body here, after OkHttp's transparent decompression and before that buffering.
+            val bytes = body.use {
+                if (it.contentLength() > MAX_LICENSE_BYTES) {
+                    throw IOException("DRM license exceeds the supported size limit")
                 }
-                response.newBuilder().body(bytes.toResponseBody(body.contentType())).build()
+                val source = it.source()
+                if (source.request(MAX_LICENSE_BYTES + 1)) {
+                    throw IOException("DRM license exceeds the supported size limit")
+                }
+                source.readByteArray()
             }
+            response.newBuilder().body(bytes.toResponseBody(body.contentType())).build()
         }.build()
     private val license = HttpMediaDrmCallback(this.config.licenseUrl, true,
         restrictedLicenseFactory(licenseHttp, this.config.licenseUrl)).apply {
