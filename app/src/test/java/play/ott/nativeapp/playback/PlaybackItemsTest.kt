@@ -45,6 +45,20 @@ class PlaybackItemsTest {
         }
     }
 
+    @Test
+    @Config(shadows = [SupportedMediaDrm::class])
+    fun `legacy television without Leanback retains supported PlayReady playback`() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val packageManager = org.robolectric.Shadows.shadowOf(context.packageManager)
+        packageManager.setSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK, false)
+        // Deliberately calibrate the older TV capability still supported in production.
+        @Suppress("DEPRECATION")
+        packageManager.setSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION, true)
+        val item = PlaybackItems.build("legacy-tv", "Protected", "https://video.test/manifest.mpd",
+            drm = DrmConfig(DrmScheme.PLAYREADY, "https://license.test/acquire"))
+        PlaybackItems.requireSupported(context, item)
+    }
+
     /** The unit test simulates scheme availability; real MediaDrm is covered by instrumentation. */
     @org.robolectric.annotation.Implements(android.media.MediaDrm::class)
     class SupportedMediaDrm {
