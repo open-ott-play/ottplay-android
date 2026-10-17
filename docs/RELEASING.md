@@ -1,6 +1,6 @@
 # Signed builds and publication
 
-The version is stored in `version.properties`: currently `0.2.1`, `versionCode=5`. Increase the version code before every new published preview or production release. The workflow does not move an existing tag, replace a release or overwrite assets.
+The version is stored in `version.properties`: currently `0.2.1`, `versionCode=6`. Increase the version code before every new published preview or production release. The workflow does not move an existing tag, replace a release or overwrite assets.
 
 The two channels use different Android package IDs and certificates:
 
@@ -24,6 +24,20 @@ not a safe workaround. See the [certificate policy and validation scope](securit
 The recorded source for preview.5 already includes this certificate-key policy.
 Later changes on `main` still require their own qualification and a new release;
 the existing preview assets and version metadata are not rewritten.
+
+## Changes prepared for preview code 6
+
+- Preserve semantic audio and subtitle preferences across streams instead of
+  binding them only to transient track indexes.
+- Update the vendored shared-core package and remove Android compiler warnings
+  while retaining the existing preview signing identity and application ID.
+- Refresh the project assessment and SDK evidence. Existing published preview.5
+  artifacts keep their original source and validation records.
+
+The next preview uses version code 6 and can update a preview installation signed
+with the established certificate. Publication still requires successful host,
+phone and Android TV checks on the exact release commit. Production signing and
+store submission remain separate; preview artifacts are not production packages.
 
 ## Stable preview certificate
 
