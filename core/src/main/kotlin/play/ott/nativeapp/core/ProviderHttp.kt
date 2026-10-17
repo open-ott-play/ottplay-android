@@ -102,7 +102,7 @@ internal class ProviderHttp(client: OkHttpClient, private val transportPolicy: R
                     response.use {
                         // Error and redirect bodies are irrelevant and may contain credentials.
                         val bytes = if (response.isSuccessful) {
-                            val body = response.body ?: throw ProviderException("Source returned an empty body")
+                            val body = response.body
                             if (body.contentLength() > limit) throw ProviderException("Source exceeds the supported size limit")
                             body.byteStream().use { stream ->
                                 val output = ByteArrayOutputStream()

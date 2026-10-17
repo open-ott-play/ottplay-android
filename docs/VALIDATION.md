@@ -64,3 +64,25 @@ Physical-device decoders, hardware DRM, paid-provider acceptance, 16 KB runtime
 behavior, delivered split APKs and Google Play certification require their own
 checks. The [submission guide](PLAY-CONSOLE-SUBMISSION.md) covers store
 preparation and the separate publication requirements.
+
+## Compiler and tool diagnostics
+
+The Kotlin build retains compiler warnings, and Gradle runs with
+`org.gradle.warning.mode=all` so individual build-tool deprecations remain visible.
+The 2026-10-16 review removed impossible nullable branches under OkHttp 5.4,
+uses current Media3 track defaults, migrates Compose instrumentation rules to
+`junit4.v2`, and replaces the deprecated Gradle task-registration delegate.
+The complete instrumentation suite must pass after the Compose scheduler change;
+compilation alone does not establish equivalent UI behavior.
+
+Three narrowly scoped compatibility uses intentionally remain: the old Android
+TV feature flag for supported devices without leanback, MediaItem bundle round
+trips that exercise old controller IPC, and a rejected `ACTION_MULTIPLE` input.
+Each has a local comment and `DEPRECATION` suppression at the corresponding
+helper/test. No file-wide or project-wide warning suppression is used.
+
+AGP 9.4.1 currently calls Gradle's deprecated `Configuration.setVisible(boolean)`
+during configuration. This is an upstream build-plugin compatibility diagnostic,
+not a source/compiler warning or an instruction to disable diagnostics. Track it
+when updating AGP/Gradle; the current Gradle 9.8.1 build remains supported. The
+SDK setup tool can separately report its own CLI deprecation on CI runners.

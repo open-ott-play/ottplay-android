@@ -125,6 +125,8 @@ class TvRemoteInputTest {
         assertEquals(listOf(down), normalEvents)
     }
 
+    // The removed event kind remains an intentional negative compatibility input.
+    @Suppress("DEPRECATION")
     @Test fun `orphan releases repeated downs and multiple actions never activate pre IME handlers`() {
         val view = window { true }
         for (event in listOf(event(KeyEvent.ACTION_UP), event(KeyEvent.ACTION_DOWN, repeat = 1),

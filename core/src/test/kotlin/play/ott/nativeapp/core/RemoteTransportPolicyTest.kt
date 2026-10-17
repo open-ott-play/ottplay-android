@@ -80,7 +80,7 @@ class RemoteTransportPolicyTest {
                 }
                 server.enqueue(MockResponse().setBody("secure-media"))
                 strict.newCall(Request.Builder().url(server.url("/segment")).build()).execute().use {
-                    assertEquals("secure-media", it.body?.string())
+                    assertEquals("secure-media", it.body.string())
                 }
                 server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", cleartext.url("/secret-segment")))
                 assertFailsWith<java.io.IOException> {

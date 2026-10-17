@@ -13,7 +13,7 @@ internal object RequestPolicy {
     fun requireStreamUrl(value: String, transportPolicy: RemoteTransportPolicy = AppTransportPolicy.current): String {
         val uri = try { URI(value) } catch (_: Exception) { null }
         val scheme = uri?.scheme?.lowercase(Locale.ROOT)
-        val network = scheme in setOf("http", "https") && !uri?.host.isNullOrBlank() && uri?.rawUserInfo == null
+        val network = scheme in setOf("http", "https") && !uri?.host.isNullOrBlank() && uri.rawUserInfo == null
         val local = scheme in setOf("android.resource", "rawresource", "content") && !uri?.path.isNullOrBlank()
         require(uri != null && (network || local)) {
             "Use an HTTP(S), Android resource or content URL without embedded user information"

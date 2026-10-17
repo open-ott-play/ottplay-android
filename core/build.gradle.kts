@@ -14,7 +14,7 @@ dependencies {
     testImplementation("com.squareup.okhttp3:okhttp-tls:5.4.0")
 }
 
-val verifySharedCore by tasks.registering {
+val verifySharedCore = tasks.register("verifySharedCore") {
     val jar = layout.projectDirectory.file("vendor/ottplay-core.jar")
     val receipt = layout.projectDirectory.file("vendor/ottplay-core.manifest.json")
     inputs.files(jar, receipt)
