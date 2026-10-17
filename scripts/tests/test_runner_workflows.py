@@ -60,11 +60,11 @@ class WorkflowRoutingTests(unittest.TestCase):
         android = jobs("android.yml")
         release = jobs("release.yml")
         self.assertEqual(set(android), {"scope", "build", "emulator"})
-        self.assertEqual(set(release), {"build", "publish"})
+        self.assertEqual(set(release), {"build", "publish", "stable"})
         self.assertIn("runner: " + routed(GENERIC, "ubuntu-latest"), android["scope"])
         self.assertRegex(android["scope"], r"change-scope.yml@[0-9a-f]{40}\n")
         for job, label in ((android["build"], GENERIC), (android["emulator"], KVM),
-                           (release["build"], RELEASE), (release["publish"], RELEASE)):
+                           (release["build"], RELEASE), (release["publish"], RELEASE), (release["stable"], RELEASE)):
             self.assertIn("runs-on: " + routed(label, "ubuntu-24.04"), job)
             hardened = steps(job)
             self.assertIn("uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed", hardened[0])
