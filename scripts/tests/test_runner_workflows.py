@@ -67,7 +67,7 @@ class WorkflowRoutingTests(unittest.TestCase):
                            (release["build"], RELEASE), (release["publish"], RELEASE), (release["stable"], RELEASE)):
             self.assertIn("runs-on: " + routed(label, "ubuntu-24.04"), job)
             hardened = steps(job)
-            self.assertIn("uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed", hardened[0])
+            self.assertIn("uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25", hardened[0])
             self.assertIn("egress-policy: audit", hardened[0])
             sequence = hardened[1:]
             self.assertTrue(sequence[0].startswith("uses: actions/checkout@"))
