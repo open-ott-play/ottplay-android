@@ -17,6 +17,10 @@ updates:
         patterns:
           - org.jetbrains.kotlin:*
           - org.jetbrains.kotlin.*
+          # Kotlin DSL accessors are reported under these short names.
+          - jvm
+          - plugin.compose
+          - plugin.serialization
   - package-ecosystem: github-actions
     directory: /
     schedule:
