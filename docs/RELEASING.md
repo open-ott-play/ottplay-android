@@ -1,11 +1,11 @@
 # Signed builds and publication
 
-The version is stored in `version.properties`: currently `0.2.1`, `versionCode=6`. Increase the version code before every new published preview or production release. The workflow does not move an existing tag, replace a release or overwrite assets.
+The version is stored in `version.properties`: currently `0.2.1`, `versionCode=7`. Increase the version code before every new published preview or production release. The workflow does not move an existing tag, replace a release or overwrite assets.
 
 Preview and stable share one Android package ID and certificate. The optional
 production application has a separate identity:
 
-- **Preview:** `play.ott.foss.nativeapp.preview`, an R8-optimized APK and a signed AAB; published tag [v0.2.1-preview.5](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.1-preview.5). The final tag component is the `versionCode`. This is a GitHub prerelease for testing, with no store submission.
+- **Preview:** `play.ott.foss.nativeapp.preview`, an R8-optimized APK and a signed AAB; next tag `v0.2.1-preview.7`. The final tag component is the `versionCode`. New previews are GitHub prereleases for testing, with no store submission. The previous [v0.2.1-preview.6](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.1-preview.6) was promoted to stable without changing its signed assets.
 - **Stable:** the exact qualified preview APK/AAB, promoted from prerelease to the
   latest stable GitHub Release. It updates the existing preview installation with
   the same package ID and signing certificate. The historical tag and Android
@@ -30,7 +30,7 @@ The recorded source for preview.5 already includes this certificate-key policy.
 Later changes on `main` still require their own qualification and a new release;
 the existing preview assets and version metadata are not rewritten.
 
-## Changes prepared for preview code 6
+## Changes delivered in preview code 6
 
 - Preserve semantic audio and subtitle preferences across streams instead of
   binding them only to transient track indexes.
@@ -39,7 +39,13 @@ the existing preview assets and version metadata are not rewritten.
 - Refresh the project assessment and SDK evidence. Existing published preview.5
   artifacts keep their original source and validation records.
 
-The next preview uses version code 6 and can update a preview installation signed
+## Changes prepared for preview code 7
+
+- Update Kotlin plugins together to 2.4.21 and group future updates.
+- Keep CodeQL actions on one compatible version and group future updates.
+- Refresh the verified shared-core receipt and declare repository code owners.
+
+The next preview uses version code 7 and can update a preview installation signed
 with the established certificate. Publication still requires successful host,
 phone and Android TV checks on the exact release commit. Production signing and
 store submission remain separate; preview artifacts are not production packages.
@@ -48,7 +54,7 @@ store submission remain separate; preview artifacts are not production packages.
 
 Preview signing and the five `PREVIEW_SIGNING_*` secrets are configured for `open-ott-play/ottplay-android` with the owner's explicit consent. The public certificate SHA-256 is `2021e3c927fff7c42daf395beacbf0ef738c6d878a827091afb48ddaa32c4dd8`.
 
-The current preview's `release-manifest.json` and `SHA256SUMS` assets identify commit `b34fd3ff8741eac40db78a81864d34771d6b3156`, package `play.ott.foss.nativeapp.preview`, version `0.2.1-preview`, and `versionCode=5`. Use those assets when verifying its APK or AAB. A future publication must increase the code beyond 5; do not reuse the published tag.
+The current stable release, promoted from preview.6, has `release-manifest.json` and `SHA256SUMS` assets identifying commit `a2089cd1dc0af427458c6313e7f825c8a35d37d5`, package `play.ott.foss.nativeapp.preview`, version `0.2.1-preview`, and `versionCode=6`. Use those assets when verifying its APK or AAB. A future publication must increase the code beyond 6; do not reuse the published tag.
 
 The [historical release report](validation/native-0.2-preview-release-results.json) records the source build ID, APK/AAB signatures and checksums for [v0.2.0-preview.2](https://github.com/open-ott-play/ottplay-android/releases/tag/v0.2.0-preview.2).
 
