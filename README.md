@@ -1,5 +1,11 @@
 # OTT-play Native for Android
 
+[![OTT-play Native library on Android TV and phone in perspective](docs/screenshots/hero.png)](docs/screenshots/README.md)
+
+*Android TV and phone captures from version 0.2.1 (build 3, 13 September 2026),
+showing the offline synthetic demo in Russian. These illustrate the interface
+and predate the current preview. [Original screenshots and regeneration](docs/screenshots/README.md).*
+
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15592/badge)](https://www.bestpractices.dev/projects/15592)
 
 A standalone Android app for personal IPTV playlists, movies, and series. The interface uses Kotlin and Jetpack Compose; playback runs through Android Media3 / ExoPlayer. The app supports touch controls and Android TV remotes. The interface follows Android language preferences and falls back to English. Settings → Language can select a different language or return to System default; all 20 languages shipped by this Android app are included offline.
