@@ -24,7 +24,7 @@ jobs:
         run: python3 scripts/ci-runner-preflight.py base
       - name: Prepare an isolated writable Android SDK
         run: python3 scripts/ci-runner-preflight.py prepare-sdk
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
           java-version: '17'
@@ -55,7 +55,7 @@ jobs:
         run: python3 scripts/ci-runner-preflight.py emulator
       - name: Prepare an isolated writable Android SDK
         run: python3 scripts/ci-runner-preflight.py prepare-sdk
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
           java-version: '17'
@@ -90,7 +90,7 @@ jobs:
         run: python3 scripts/ci-runner-preflight.py release
       - name: Prepare an isolated writable Android SDK
         run: python3 scripts/ci-runner-preflight.py prepare-sdk
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
           java-version: '17'
