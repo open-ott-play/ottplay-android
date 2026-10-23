@@ -1,6 +1,7 @@
 # CI runner selection
 
-The repository variable `CI_RUNNER_MODE` selects runners before jobs start.
+For build, test and release jobs, the repository variable `CI_RUNNER_MODE`
+selects runners before jobs start.
 Only `k3s` opts in; `github`, an empty value or any other value preserves the
 existing hosted runners. This does not change public `ottplay-foss` workflows.
 
@@ -19,10 +20,11 @@ an existing release. Changing pools does not bypass that gate.
 ## Public repositories and event admission
 
 Both repositories are public. The opt-in applies only to `push`,
-`workflow_dispatch` or `schedule` on `refs/heads/main`. All pull requests
-(including same-repository PRs), merge queues and manual runs on other branches
-stay on GitHub-hosted runners even when `CI_RUNNER_MODE=k3s`. Step provisioning
-uses `runner.environment`, so a hosted PR still installs its OS dependencies.
+`workflow_dispatch` or `schedule` on `refs/heads/main`. Build/test jobs for all
+pull requests (including same-repository PRs), merge queues and manual runs on
+other branches stay on GitHub-hosted runners even when `CI_RUNNER_MODE=k3s`.
+Step provisioning uses `runner.environment`, so a hosted PR still installs its
+OS dependencies.
 
 Workflow conditions are routing defaults, not a security boundary against a PR
 that edits YAML. Before admitting these public repositories, runner-group or
@@ -92,18 +94,27 @@ paths; only a successful live admission run certifies the provisioned pools.
 ## Merge checks and independent approval
 
 `android.yml` publishes `CI gate` after change classification, host validation and
-any selected emulator matrix. The gate always runs, rejects failed/cancelled or
-missing dependencies, and permits skipped builds only when successful change
-classification explicitly reports documentation-only changes. Push/merge-group
-runs and explicit device-test dispatches still require both emulator jobs; the
-release tool independently requires the full successful matrix for its exact SHA.
-Runner selection and signing behavior are unchanged.
+any selected emulator matrix. The gate always runs and rejects failed, cancelled
+or missing dependencies. Builds may be skipped only when successful change
+classification explicitly reports documentation-only changes; those changes also
+skip emulators. Otherwise, push/merge-group runs and explicit device-test
+dispatches require both emulator jobs, while ordinary pull requests skip them.
+The release tool independently requires the full successful matrix for its exact
+SHA. Runner selection and signing behavior are unchanged.
 
 For an eligible trusted author's ready PR, add `automerge` to request an independent
 review through the shared metadata-only approval workflow. Owner-authored PRs use
 the existing bot credential; Dependabot uses `GITHUB_TOKEN`. The workflow does not
 check out PR code. This label requests approval; it does not bypass checks or
 change the repository's native auto-merge preference.
+
+Approval is a metadata-only exception to the build/test routing above. The shared
+workflow uses `CI_RUNNER_AUTOMATION_LABELS` from repository or organization Actions
+variables for trusted same-repository PRs when `CI_RUNNER_MODE` is `k3s` or
+`self-hosted`. Configure and qualify that separate trusted pool before enabling
+the mode; missing or malformed labels fail admission instead of silently falling
+back to hosted execution. Empty/`github` mode keeps approval on hosted runners.
+See the [shared runner contract](https://github.com/victron-venus/venus-os-ci-toolkit/blob/8008fd1db4c410640e7abddfc8bc75833cdcd970/docs/RUNNERS.md#configuration).
 
 The matching Terraform policy requires one current approval and GitHub Actions'
 `CI gate`. Merge and verify these workflows before applying that policy, then read
