@@ -88,3 +88,23 @@ missing script fails admission; the KVM variant additionally checks acceleration
 Local contracts: `python3 -m unittest discover -s scripts/tests -v` and
 `actionlint .github/workflows/*.yml`. Local mocks validate routing and rejection
 paths; only a successful live admission run certifies the provisioned pools.
+
+## Merge checks and independent approval
+
+`android.yml` publishes `CI gate` after change classification, host validation and
+any selected emulator matrix. The gate always runs, rejects failed/cancelled or
+missing dependencies, and permits skipped builds only when successful change
+classification explicitly reports documentation-only changes. Push/merge-group
+runs and explicit device-test dispatches still require both emulator jobs; the
+release tool independently requires the full successful matrix for its exact SHA.
+Runner selection and signing behavior are unchanged.
+
+For an eligible trusted author's ready PR, add `automerge` to request an independent
+review through the shared metadata-only approval workflow. Owner-authored PRs use
+the existing bot credential; Dependabot uses `GITHUB_TOKEN`. The workflow does not
+check out PR code. This label requests approval; it does not bypass checks or
+change the repository's native auto-merge preference.
+
+The matching Terraform policy requires one current approval and GitHub Actions'
+`CI gate`. Merge and verify these workflows before applying that policy, then read
+back the live rules. A workflow commit alone does not enable branch protection.
