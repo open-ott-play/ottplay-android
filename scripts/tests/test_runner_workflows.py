@@ -59,7 +59,7 @@ class WorkflowRoutingTests(unittest.TestCase):
     def test_scope_build_emulator_signing_and_publication_use_separate_pools(self):
         android = jobs("android.yml")
         release = jobs("release.yml")
-        self.assertEqual(set(android), {"scope", "build", "emulator"})
+        self.assertEqual(set(android), {"scope", "build", "emulator", "ci-gate"})
         self.assertEqual(set(release), {"build", "publish", "stable"})
         self.assertIn("runner: " + routed(GENERIC, "ubuntu-latest"), android["scope"])
         self.assertRegex(android["scope"], r"change-scope.yml@[0-9a-f]{40}\n")
@@ -74,6 +74,19 @@ class WorkflowRoutingTests(unittest.TestCase):
             self.assertIn("persist-credentials: false", sequence[0])
             self.assertIn("ci-runner-preflight.py", sequence[1])
             self.assertIn("if: runner.environment == 'self-hosted'", sequence[1])
+
+    def test_gate_always_checks_all_dependencies_on_the_existing_generic_pool(self):
+        gate = jobs("android.yml")["ci-gate"]
+        self.assertIn("name: CI gate", gate)
+        self.assertIn("if: always()", gate)
+        self.assertIn("needs: [scope, build, emulator]", gate)
+        self.assertIn("runs-on: " + routed(GENERIC, "ubuntu-24.04"), gate)
+        self.assertIn("ANDROID_NEEDS: ${{ toJSON(needs) }}", gate)
+        self.assertIn("ANDROID_EVENT: ${{ github.event_name }}", gate)
+        self.assertIn("ANDROID_DEVICE_TESTS: ${{ toJSON(inputs.run_device_tests || false) }}", gate)
+        self.assertIn("run: python3 scripts/check-ci-gate.py", gate)
+        self.assertNotIn("continue-on-error", gate)
+        self.assertNotIn("secrets.", gate)
 
     def test_host_mutations_are_hosted_only_and_kvm_is_verified_before_tests(self):
         emulator = jobs("android.yml")["emulator"]
