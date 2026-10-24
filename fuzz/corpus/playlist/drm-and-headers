@@ -1,0 +1,6 @@
+#EXTM3U
+#EXTINF:-1,Protected
+#KODIPROP:inputstream.adaptive.license_type=com.widevine.alpha
+#KODIPROP:inputstream.adaptive.license_key=https://example.invalid/license|Authorization=Bearer%20sample|R{SSM}|
+#EXTVLCOPT:http-user-agent=PublicFuzzSample
+https://example.invalid/manifest.mpd
