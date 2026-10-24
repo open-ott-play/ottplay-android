@@ -25,7 +25,10 @@ internal fun httpUrl(value: String): HttpUrl = value.trim().toHttpUrlOrNull()
 internal fun resolveHttp(base: String, value: String): String {
     if (value.isBlank()) return ""
     val resolved = value.trim().toHttpUrlOrNull() ?: base.toHttpUrlOrNull()?.resolve(value.trim())
-    return resolved?.toString() ?: ""
+    val canonical = resolved?.toString() ?: return ""
+    // Some Unicode hosts normalize to an unusable ASCII form. Imported URLs
+    // must remain valid when the same HTTP stack parses them for playback.
+    return canonical.takeIf { it.toHttpUrlOrNull()?.toString() == it }.orEmpty()
 }
 
 internal fun mergedHeaders(vararg maps: Map<String, String>): Map<String, String> {

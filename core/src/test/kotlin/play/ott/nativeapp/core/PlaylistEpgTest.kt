@@ -60,6 +60,21 @@ class PlaylistEpgTest {
         assertFailsWith<ProviderException> { M3uParser.parse("<html>Login required</html>", config) }
     }
 
+    @Test fun `unusable IDN normalization is skipped without dropping valid entries`() {
+        val invalid = "#EXTM3U\n#EXTINF:-1,Invalid host\nhttps://exaħTM6U(\n"
+        assertFailsWith<ProviderException> { M3uParser.parse(invalid, config) }
+        val catalog = M3uParser.parse(invalid + """
+            #EXTINF:-1,International
+            https://bücher.example/live
+            #EXTINF:-1,Relative
+            ../live/good.m3u8
+        """.trimIndent(), config)
+        assertEquals(listOf("International", "Relative"), catalog.entries.map { it.name })
+        assertEquals(listOf("https://xn--bcher-kva.example/live", "https://example.test/live/good.m3u8"),
+            catalog.entries.map { it.url })
+        catalog.entries.forEach { assertEquals(it.url, resolveHttp(config.url, it.url)) }
+    }
+
     @Test fun `same name on different TV channels is not a collision`() {
         val playlist = "#EXTM3U\n#EXTINF:-1,News\nhttps://example.test/one\n#EXTINF:-1,News\nhttps://example.test/two"
         val channels = M3uParser.parse(playlist, config).entries
