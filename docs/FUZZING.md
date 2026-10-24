@@ -78,3 +78,13 @@ If an assessment fails, inspect its logs, minimize the input, fix the production
 code, preserve the input as a regression seed and rerun the assessment on the
 new reviewed source. The committed corpus uses synthetic public data. Never
 commit provider credentials, personal playlists or device exports.
+
+## Findings retained as regressions
+
+The first source RC assessment found a Unicode-host normalization case where an
+imported playlist URL became unusable when parsed again for playback. The input
+was reduced to `fuzz/corpus/playlist/unusable-idn-host`. URL resolution now
+requires the canonical form to remain valid and unchanged under the same HTTP
+parser. Unit tests also retain valid international domains, relative links and
+the next valid channel after a rejected entry. The target invariant remains in
+place; a fixed regression replay alone does not replace a fresh RC assessment.
