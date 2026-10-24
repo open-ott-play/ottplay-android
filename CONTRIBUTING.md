@@ -27,6 +27,10 @@ python3 scripts/validate-localization.py
 
 Use Java 17 and the Android SDK versions selected by CI. Unsigned builds and host tests do not imply signed release publication. Phone and Android TV instrumented runs are separate required release evidence.
 
+For the offline parser checks, run `python3 fuzz/build.py replay`. This needs
+only JDK 17 and Python 3. See [FUZZING.md](docs/FUZZING.md) for pinned build
+dependencies, fixed regressions and the public RC-only mutation policy.
+
 The [CI workflow](.github/workflows/android.yml) is the authoritative list of required jobs.
 Use isolated test data and temporary outputs. Never run a device write, unlock,
 deployment or publication command merely to validate a documentation change.

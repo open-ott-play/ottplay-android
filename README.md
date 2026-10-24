@@ -8,6 +8,8 @@ and predate the current preview. [Original screenshots and regeneration](docs/sc
 
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15592/badge)](https://www.bestpractices.dev/projects/15592)
 
+[![RC parser fuzz assessment](https://github.com/open-ott-play/ottplay-android/actions/workflows/fuzz-candidate.yml/badge.svg)](https://github.com/open-ott-play/ottplay-android/actions/workflows/fuzz-candidate.yml)
+
 A standalone Android app for personal IPTV playlists, movies, and series. The interface uses Kotlin and Jetpack Compose; playback runs through Android Media3 / ExoPlayer. The app supports touch controls and Android TV remotes. The interface follows Android language preferences and falls back to English. Settings → Language can select a different language or return to System default; all 20 languages shipped by this Android app are included offline.
 
 This is a separate product with application ID `play.ott.foss.nativeapp`. It can be installed alongside `ottplay-foss`. Signed previews use the separate ID `play.ott.foss.nativeapp.preview`, with a stable signing identity configured independently from production. Neither running nor building the app requires the JavaScript player, WebView, Capacitor, or Node.js. The current project version is `0.2.1`; implementing a feature does not establish compatibility with every TV, codec, or provider service.
@@ -45,6 +47,10 @@ Release and preview enforce HTTPS for remote sources, provider APIs, artwork, EP
 The offline privacy policy is available before setup and in settings. The [public privacy policy](https://astral-oasis-sbqd.here.now/) and [Play submission pack](docs/PLAY-CONSOLE-SUBMISSION.md) document current data flows and remaining Console steps. Google Play submission and content rights require separate preparation. The signed preview was published through a dedicated workflow that verifies the version, certificate, and complete phone/TV test matrix. The certificate and future release procedure are documented in [docs/RELEASING.md](docs/RELEASING.md); the current release assets include `release-manifest.json` and `SHA256SUMS` with exact source and artifact identities. The [historical publication report](docs/validation/native-0.2-preview-release-results.json) applies only to v0.2.0-preview.2. Store approval and Android TV certification are not claimed.
 
 ## Building
+
+The production M3U/XMLTV parsers also have an offline JVM fuzz assessment for
+explicit public source release candidates, plus fixed seed replay in host CI.
+See [targets, budgets, evidence and reproduction](docs/FUZZING.md).
 
 Install JDK 17 and the Android SDK with `platforms;android-37.0`, `build-tools;36.0.0`, and `platform-tools`. The minimum Android API remains 26 and the target API remains 36. The Gradle Wrapper is included. Set the SDK location with `ANDROID_HOME` or a local `local.properties` file; do not commit personal paths or signing keys.
 

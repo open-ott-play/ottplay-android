@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "language": "jvm",
+  "setup": [["python3", "fuzz/build.py", "replay"]],
+  "targets": [
+    {
+      "name": "playlist",
+      "engine": "libfuzzer",
+      "command": ["python3", "fuzz/run.py", "playlist"],
+      "seconds": 90,
+      "corpus": "fuzz/corpus/playlist"
+    },
+    {
+      "name": "xmltv",
+      "engine": "libfuzzer",
+      "command": ["python3", "fuzz/run.py", "xmltv"],
+      "seconds": 90,
+      "corpus": "fuzz/corpus/xmltv"
+    }
+  ]
+}

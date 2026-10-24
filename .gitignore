@@ -10,3 +10,4 @@ __pycache__/
 *.keystore
 captures/
 .herenow/
+.fuzz-build/

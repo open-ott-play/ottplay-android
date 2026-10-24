@@ -1,0 +1,5 @@
+#EXTM3U
+#EXTINF:-1 tvg-id="one" group-title="News",One
+https://example.invalid/one.m3u8
+#EXTINF:-1,Relative
+../two.m3u8

@@ -1,0 +1,1 @@
+<!DOCTYPE tv [<!ENTITY private SYSTEM "https://example.invalid/entity">]><tv>&private;</tv>

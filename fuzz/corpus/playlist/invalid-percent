@@ -1,0 +1,3 @@
+#EXTM3U
+#EXTINF:-1,Invalid encoding
+https://example.invalid/stream|User-Agent=%XX
