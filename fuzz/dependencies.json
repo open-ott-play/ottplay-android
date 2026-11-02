@@ -90,9 +90,9 @@
     ]
   },
   {
-    "path": "com/squareup/okhttp3/okhttp-jvm/5.4.0/okhttp-jvm-5.4.0.jar",
-    "sha256": "b15e605ca0a4b12c62ea7f657dad413c236c947e875854767349cdbe20df473c",
-    "bytes": 863503,
+    "path": "com/squareup/okhttp3/okhttp-jvm/5.5.1/okhttp-jvm-5.5.1.jar",
+    "sha256": "4039527bd1f2e40b66e20b0e52c689cf56074b938ea02678141495f5160f1047",
+    "bytes": 963622,
     "roles": [
       "runtime"
     ]
