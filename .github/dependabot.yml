@@ -10,6 +10,9 @@ updates:
       - dependency-name: com.squareup.okhttp3:*
         versions: ["5.5.0"]
     groups:
+      okhttp:
+        patterns:
+          - com.squareup.okhttp3:*
       android-media3:
         patterns:
           - androidx.media3:*
