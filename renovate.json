@@ -1,0 +1,100 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "local>victron-venus/venus-os-ci-toolkit:renovate-fleet"
+  ],
+  "enabledManagers": [
+    "custom.jsonata",
+    "custom.regex",
+    "github-actions",
+    "gradle",
+    "gradle-wrapper"
+  ],
+  "ignorePaths": [
+    "**/vendor/**",
+    "**/node_modules/**",
+    "**/fixtures/**",
+    "**/tools/browser-compatibility/**",
+    "security/provider/**",
+    "build-support/tls-armv7/**"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": [
+        "gradle",
+        "gradle-wrapper"
+      ],
+      "matchFileNames": [
+        "**"
+      ],
+      "schedule": [
+        "* * * * 1"
+      ]
+    },
+    {
+      "matchManagers": [
+        "gradle",
+        "gradle-wrapper"
+      ],
+      "matchFileNames": [
+        "**"
+      ],
+      "matchPackageNames": [
+        "com.squareup.okhttp3:*"
+      ],
+      "groupName": "okhttp",
+      "groupSlug": "okhttp",
+      "separateMajorMinor": false,
+      "separateMinorPatch": false
+    },
+    {
+      "matchManagers": [
+        "gradle",
+        "gradle-wrapper"
+      ],
+      "matchFileNames": [
+        "**"
+      ],
+      "matchPackageNames": [
+        "androidx.media3:*"
+      ],
+      "groupName": "android-media3",
+      "groupSlug": "android-media3",
+      "separateMajorMinor": false,
+      "separateMinorPatch": false
+    },
+    {
+      "matchManagers": [
+        "gradle",
+        "gradle-wrapper"
+      ],
+      "matchFileNames": [
+        "**"
+      ],
+      "matchPackageNames": [
+        "org.jetbrains.kotlin:*",
+        "org.jetbrains.kotlin.*",
+        "jvm",
+        "plugin.compose",
+        "plugin.serialization"
+      ],
+      "groupName": "kotlin",
+      "groupSlug": "kotlin",
+      "separateMajorMinor": false,
+      "separateMinorPatch": false
+    },
+    {
+      "matchManagers": [
+        "gradle",
+        "gradle-wrapper"
+      ],
+      "matchFileNames": [
+        "**"
+      ],
+      "matchPackageNames": [
+        "com.squareup.okhttp3:*"
+      ],
+      "allowedVersions": "!/^5\\.5\\.0$/"
+    }
+  ]
+}
