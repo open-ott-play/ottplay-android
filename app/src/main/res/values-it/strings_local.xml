@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Video locali</string>
+    <string name="local_add_folder">Apri cartella video</string>
+    <string name="local_add_files">Apri file video</string>
+    <string name="local_scanning">Ricerca video · %1$d pronti</string>
+    <string name="local_cancel_scan">Interrompi ricerca</string>
+    <string name="local_shuffle">Riproduzione casuale</string>
+    <string name="local_scan_failed">Impossibile leggere alcuni file locali. Controlla le autorizzazioni e aggiorna.</string>
+    <string name="local_waiting">In attesa del prossimo video locale…</string>
+    <string name="local_picker_unavailable">Nessun selettore di documenti disponibile su questo dispositivo.</string>
+    <string name="local_grant_limit">Troppe autorizzazioni ai file salvate. Rimuovi le sorgenti locali inutilizzate o seleziona una cartella.</string>
+</resources>

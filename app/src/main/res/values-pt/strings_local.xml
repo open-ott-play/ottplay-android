@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Vídeos locais</string>
+    <string name="local_add_folder">Abrir pasta de vídeos</string>
+    <string name="local_add_files">Abrir ficheiros de vídeo</string>
+    <string name="local_scanning">A procurar vídeos · %1$d prontos</string>
+    <string name="local_cancel_scan">Parar pesquisa</string>
+    <string name="local_shuffle">Reprodução aleatória</string>
+    <string name="local_scan_failed">Não foi possível ler alguns ficheiros locais. Verifique o acesso e atualize.</string>
+    <string name="local_waiting">À espera do próximo vídeo local…</string>
+    <string name="local_picker_unavailable">Este dispositivo não tem seletor de documentos.</string>
+    <string name="local_grant_limit">Demasiadas permissões de ficheiros guardadas. Remova as fontes locais não utilizadas ou selecione uma pasta.</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Локальні відео</string>
+    <string name="local_add_folder">Відкрити папку з відео</string>
+    <string name="local_add_files">Відкрити відеофайли</string>
+    <string name="local_scanning">Пошук відео · готово: %1$d</string>
+    <string name="local_cancel_scan">Зупинити пошук</string>
+    <string name="local_shuffle">Перемішати</string>
+    <string name="local_scan_failed">Деякі локальні файли недоступні. Перевірте доступ і оновіть.</string>
+    <string name="local_waiting">Очікування наступного локального відео…</string>
+    <string name="local_picker_unavailable">На пристрої немає засобу вибору файлів.</string>
+    <string name="local_grant_limit">Забагато збережених дозволів на файли. Видаліть непотрібні локальні джерела або виберіть папку.</string>
+</resources>

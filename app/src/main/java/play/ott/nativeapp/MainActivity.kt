@@ -2,7 +2,7 @@ package play.ott.nativeapp
 
 import android.app.PictureInPictureParams
 import android.content.ComponentName
-import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
@@ -51,7 +51,6 @@ open class MainActivity : AppCompatActivity() {
     }
     private val importPlaylist = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { }
             val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                 if (it.moveToFirst()) it.getString(0) else null
             } ?: getString(R.string.local_playlist)
@@ -59,6 +58,12 @@ open class MainActivity : AppCompatActivity() {
         }
     }
     private val importSettings = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(model::importSettings) }
+    private val importLocalFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) model.importLocal(listOf(uri), true)
+    }
+    private val importLocalFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) model.importLocal(uris, false)
+    }
     private val exportSettings = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(model::exportSettings) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,6 +77,8 @@ open class MainActivity : AppCompatActivity() {
                 onAction = { action ->
                     when (action) {
                         AppAction.ImportPlaylist -> importPlaylist.launch(arrayOf("*/*"))
+                        AppAction.ImportLocalFolder -> try { importLocalFolder.launch(null) } catch (_: ActivityNotFoundException) { model.onLocalPickerUnavailable() }
+                        AppAction.ImportLocalFiles -> try { importLocalFiles.launch(arrayOf("video/*", "audio/*")) } catch (_: ActivityNotFoundException) { model.onLocalPickerUnavailable() }
                         AppAction.ImportSettings -> importSettings.launch(arrayOf("application/json", "text/plain"))
                         AppAction.ExportSettings -> exportSettings.launch("ottplay-native-settings.json")
                         else -> model.dispatch(action)

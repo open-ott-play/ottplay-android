@@ -71,7 +71,7 @@ internal fun SourceEditor(
             ) {
                 Text(stringResource(R.string.dialog_source_intro), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SourceKind.entries.forEach { option ->
+                    SourceKind.entries.filter { it != SourceKind.LOCAL }.forEach { option ->
                         FilterChip(selected = kind == option, onClick = { kind = option }, enabled = !localSource, label = { Text(option.label()) })
                     }
                 }
@@ -158,6 +158,7 @@ internal fun SourceKind.label(): String = when (this) {
     SourceKind.M3U -> stringResource(R.string.dialog_source_kind_m3u)
     SourceKind.XTREAM -> stringResource(R.string.dialog_source_kind_xtream)
     SourceKind.STALKER -> stringResource(R.string.dialog_source_kind_stalker)
+    SourceKind.LOCAL -> stringResource(R.string.local_videos)
 }
 
 private fun isHttpUrl(value: String): Boolean = runCatching {

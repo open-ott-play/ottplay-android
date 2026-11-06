@@ -3,6 +3,7 @@ package play.ott.nativeapp.playback
 import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
@@ -27,6 +28,7 @@ internal class ItemMediaSourceFactory(
     context: Context,
     client: OkHttpClient,
     private val transportPolicy: RemoteTransportPolicy = AppTransportPolicy.current,
+    private val localValidator: ((MediaItem) -> Unit)? = null,
 ) : MediaSource.Factory {
     private val client = transportPolicy.secure(client)
     private val context = context.applicationContext
@@ -36,8 +38,7 @@ internal class ItemMediaSourceFactory(
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val resolved = PlaybackItems.resolve(mediaItem)
         PlaybackItems.requireSupported(context, resolved)
-        val http = httpFactoryFor(resolved)
-        val factory = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))
+        val factory = DefaultMediaSourceFactory(dataSourceFactoryFor(resolved))
         val config = PlaybackItems.drm(resolved)
         if (drmProvider != null) {
             factory.setDrmSessionManagerProvider(requireNotNull(drmProvider))
@@ -74,6 +75,16 @@ internal class ItemMediaSourceFactory(
         return OkHttpDataSource.Factory(scopedClient)
             .setUserAgent("OTT-play-Android/1.0")
             .setDefaultRequestProperties(headers)
+    }
+
+    internal fun dataSourceFactoryFor(item: MediaItem): DataSource.Factory {
+        val delegate = DefaultDataSource.Factory(context, httpFactoryFor(item))
+        if (item.requestMetadata.extras?.getString(LocalPlaybackQueue.EXTRA_SOURCE) == null) return delegate
+        return DataSource.Factory {
+            LocalPlaybackDataSource(delegate.createDataSource(), requireNotNull(item.localConfiguration).uri) {
+                requireNotNull(localValidator) { "Local source validation is unavailable" }.invoke(item)
+            }
+        }
     }
 
     override fun getSupportedTypes(): IntArray = DefaultMediaSourceFactory(context).supportedTypes

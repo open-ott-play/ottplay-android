@@ -27,6 +27,7 @@ The app does not provide a subscription, a built-in commercial catalog, or permi
 
 ## Implemented features
 
+- **Local videos:** select video/audio files or a folder through Android's document picker. The first readable original starts while the rest of the folder is discovered; playback supports progressive shuffle, EOF waiting, cancellation, and persistent favorites/resume identity. [Behavior, limits and validation](docs/LOCAL-VIDEOS.md).
 - **M3U:** HTTPS downloads (HTTP is available in the separate full build) and selected-file imports, groups, names, logos, `tvg-id`, XMLTV, and standard HTTP headers. An HLS manifest is treated as one stream. Catch-up supports `default`, `append`, Flussonic, and recognized time placeholders; a fallback archive duration in hours can be set when the playlist has no catch-up tags.
 - **Xtream:** separate APIs for live TV, movies, series, and episodes, plus the older combined `player_api.php` response containing `live_streams` and `categories`. Catch-up uses server time. Unsupported optional sections returning HTTP 404/405/501 are reported explicitly; authentication, network, and server errors are not treated as successful empty catalogs.
 - **Stalker:** classic MAG handshake, profile, paginated channel lists, and `create_link`. The JSON-RPC protocol uses an explicitly configured endpoint ending in `/api/`. For endpoint configuration, see the [migration guide](docs/MIGRATION.md).

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">סרטונים מקומיים</string>
+    <string name="local_add_folder">פתיחת תיקיית סרטונים</string>
+    <string name="local_add_files">פתיחת קובצי וידאו</string>
+    <string name="local_scanning">מחפש סרטונים · %1$d מוכנים</string>
+    <string name="local_cancel_scan">הפסקת חיפוש</string>
+    <string name="local_shuffle">ניגון אקראי</string>
+    <string name="local_scan_failed">לא ניתן לקרוא חלק מהקבצים המקומיים. יש לבדוק הרשאות ולרענן.</string>
+    <string name="local_waiting">ממתין לסרטון המקומי הבא…</string>
+    <string name="local_picker_unavailable">אין בורר מסמכים במכשיר זה.</string>
+    <string name="local_grant_limit">נשמרו הרשאות רבות מדי לקבצים. יש להסיר מקורות מקומיים שאינם בשימוש או לבחור תיקייה.</string>
+</resources>

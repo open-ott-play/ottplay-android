@@ -29,6 +29,7 @@ class ProviderRepository(
             }
             SourceKind.XTREAM -> xtream.load(config)
             SourceKind.STALKER -> stalker.load(config)
+            SourceKind.LOCAL -> throw ProviderException("Local videos are opened by the Android document provider")
         }
     }
 

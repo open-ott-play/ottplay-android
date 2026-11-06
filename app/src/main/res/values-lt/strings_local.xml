@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Vietiniai vaizdo įrašai</string>
+    <string name="local_add_folder">Atverti vaizdo įrašų aplanką</string>
+    <string name="local_add_files">Atverti vaizdo failus</string>
+    <string name="local_scanning">Ieškoma vaizdo įrašų · %1$d paruošta</string>
+    <string name="local_cancel_scan">Stabdyti paiešką</string>
+    <string name="local_shuffle">Atsitiktinė tvarka</string>
+    <string name="local_scan_failed">Kai kurių vietinių failų nepavyko perskaityti. Patikrinkite prieigą ir atnaujinkite.</string>
+    <string name="local_waiting">Laukiama kito vietinio vaizdo įrašo…</string>
+    <string name="local_picker_unavailable">Šiame įrenginyje nėra dokumentų parinkiklio.</string>
+    <string name="local_grant_limit">Per daug išsaugotų failų leidimų. Pašalinkite nenaudojamus vietinius šaltinius arba pasirinkite aplanką.</string>
+</resources>
