@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Videoclipuri locale</string>
+    <string name="local_add_folder">Deschide dosar video</string>
+    <string name="local_add_files">Deschide fișiere video</string>
+    <string name="local_scanning">Căutare video · %1$d pregătite</string>
+    <string name="local_cancel_scan">Oprește căutarea</string>
+    <string name="local_shuffle">Redare aleatorie</string>
+    <string name="local_scan_failed">Unele fișiere locale nu au putut fi citite. Verifică accesul și reîmprospătează.</string>
+    <string name="local_waiting">Se așteaptă următorul videoclip local…</string>
+    <string name="local_picker_unavailable">Acest dispozitiv nu are un selector de documente.</string>
+</resources>

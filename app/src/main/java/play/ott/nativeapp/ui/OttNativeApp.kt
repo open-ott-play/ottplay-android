@@ -90,6 +90,7 @@ import play.ott.nativeapp.R
 import play.ott.nativeapp.core.MediaEntry
 import play.ott.nativeapp.core.MediaKind
 import play.ott.nativeapp.core.SourceConfig
+import play.ott.nativeapp.core.SourceKind
 import play.ott.nativeapp.i18n.AppLanguages
 import kotlinx.coroutines.launch
 
@@ -125,6 +126,9 @@ fun OttNativeApp(
     var initializedSource by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val selectedSource = state.sources.firstOrNull { it.id == state.selectedSourceId }
+    LaunchedEffect(selectedSource?.id) {
+        if (selectedSource?.kind == SourceKind.LOCAL) { tab = LibraryTab.MOVIES; search = "" }
+    }
     val tabEntries = remember(state.entries, state.favoriteIds, tab) {
         state.entries.filter { entry ->
             when (tab) {
@@ -195,7 +199,8 @@ fun OttNativeApp(
                 if ((fullscreen || inPictureInPicture) && state.playingEntry != null) {
                     NativePlayerPane(state.playingEntry, controller, true, { fullscreen = false }, onPictureInPicture,
                         { onAction(AppAction.StopPlayback) }, { onAction(AppAction.Play(state.playingEntry)) },
-                        { audio, preference -> onAction(AppAction.SetTrackPreference(audio, preference)) }, Modifier.fillMaxSize(), inPictureInPicture)
+                        { audio, preference -> onAction(AppAction.SetTrackPreference(audio, preference)) }, Modifier.fillMaxSize(), inPictureInPicture,
+                        localScanning = state.localScanning && state.playingEntry.sourceId == state.selectedSourceId)
                 } else {
                     BoxWithConstraints(Modifier.fillMaxSize()) {
                         val wide = isTv || maxWidth >= 840.dp
@@ -244,12 +249,23 @@ fun OttNativeApp(
                                         modifier = Modifier.weight(1f),
                                         onAdd = { sourceEditorId = null; sourceEditorOpen = true },
                                         onImport = { onAction(AppAction.ImportPlaylist) },
+                                        onLocalFolder = { onAction(AppAction.ImportLocalFolder) },
+                                        onLocalFiles = { onAction(AppAction.ImportLocalFiles) },
                                         onDemo = { onAction(AppAction.AddDemo) },
                                         onPrivacy = { showPrivacy = true },
                                         initialFocus = welcomeFocus,
                                     )
                                 } else {
                                     LibraryHeader(stringResource(tab.heading), selectedSource, state.sources, onAction, state.isBusy)
+                                    if (selectedSource?.kind == SourceKind.LOCAL) {
+                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            item { ActionButton(stringResource(R.string.local_shuffle), { onAction(AppAction.PlayLocalShuffle) }, enabled = state.entries.isNotEmpty(), compact = true) }
+                                            if (state.localScanning) {
+                                                item { Text(stringResource(R.string.local_scanning, state.entries.size), style = MaterialTheme.typography.bodySmall) }
+                                                item { ActionButton(stringResource(R.string.local_cancel_scan), { onAction(AppAction.CancelLocalScan) }, compact = true) }
+                                            }
+                                        }
+                                    }
                                     state.playingEntry?.let { entry ->
                                         Card(onClick = { fullscreen = true }, modifier = Modifier.testTag("now-playing-bar"), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                                             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -375,7 +391,7 @@ private fun LibraryHeader(title: String, source: SourceConfig?, sources: List<So
 }
 
 @Composable
-private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit, onDemo: () -> Unit, onPrivacy: () -> Unit, initialFocus: FocusRequester) {
+private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit, onLocalFolder: () -> Unit, onLocalFiles: () -> Unit, onDemo: () -> Unit, onPrivacy: () -> Unit, initialFocus: FocusRequester) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.Start) {
         Text(stringResource(R.string.library_welcome_label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(20.dp))
@@ -386,6 +402,10 @@ private fun Welcome(modifier: Modifier, onAdd: () -> Unit, onImport: () -> Unit,
         ActionButton(stringResource(R.string.library_add_source), onAdd, Modifier.focusRequester(initialFocus).testTag("welcome-add-source"), selected = true)
         Spacer(Modifier.height(8.dp))
         ActionButton(stringResource(R.string.library_open_m3u), onImport)
+        Spacer(Modifier.height(8.dp))
+        ActionButton(stringResource(R.string.local_add_folder), onLocalFolder)
+        Spacer(Modifier.height(8.dp))
+        ActionButton(stringResource(R.string.local_add_files), onLocalFiles)
         Spacer(Modifier.height(8.dp))
         ActionButton(stringResource(R.string.library_try_demo), onDemo)
         Spacer(Modifier.height(20.dp))
@@ -455,7 +475,7 @@ private fun SourcesDialog(state: AppUiState, onAction: (AppAction) -> Unit, onDi
                         Text(if (source.id == state.selectedSourceId) stringResource(R.string.library_source_selected, source.kind.label()) else source.kind.label(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ActionButton(stringResource(R.string.library_select), { onAction(AppAction.SelectSource(source.id)); onDismiss() }, Modifier.weight(1f), compact = true)
-                            ActionButton(stringResource(R.string.library_edit), { onEdit(source) }, Modifier.weight(1f), compact = true)
+                            if (source.kind != SourceKind.LOCAL) ActionButton(stringResource(R.string.library_edit), { onEdit(source) }, Modifier.weight(1f), compact = true)
                         }
                         TextButton(onClick = { deleting = source }) { Text(stringResource(R.string.library_delete_source), color = MaterialTheme.colorScheme.error) }
                         HorizontalDivider()
@@ -463,6 +483,8 @@ private fun SourcesDialog(state: AppUiState, onAction: (AppAction) -> Unit, onDi
                 }
                 item { ActionButton(stringResource(R.string.library_add_by_url), { onEdit(null) }, Modifier.fillMaxWidth(), selected = true) }
                 item { ActionButton(stringResource(R.string.library_open_m3u), { onAction(AppAction.ImportPlaylist); onDismiss() }, Modifier.fillMaxWidth()) }
+                item { ActionButton(stringResource(R.string.local_add_folder), { onAction(AppAction.ImportLocalFolder); onDismiss() }, Modifier.fillMaxWidth()) }
+                item { ActionButton(stringResource(R.string.local_add_files), { onAction(AppAction.ImportLocalFiles); onDismiss() }, Modifier.fillMaxWidth()) }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.library_done)) } },

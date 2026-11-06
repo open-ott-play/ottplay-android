@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Τοπικά βίντεο</string>
+    <string name="local_add_folder">Άνοιγμα φακέλου βίντεο</string>
+    <string name="local_add_files">Άνοιγμα αρχείων βίντεο</string>
+    <string name="local_scanning">Αναζήτηση βίντεο · %1$d έτοιμα</string>
+    <string name="local_cancel_scan">Διακοπή αναζήτησης</string>
+    <string name="local_shuffle">Τυχαία αναπαραγωγή</string>
+    <string name="local_scan_failed">Ορισμένα τοπικά αρχεία δεν διαβάζονται. Ελέγξτε την πρόσβαση και ανανεώστε.</string>
+    <string name="local_waiting">Αναμονή για το επόμενο τοπικό βίντεο…</string>
+    <string name="local_picker_unavailable">Δεν υπάρχει επιλογέας εγγράφων σε αυτή τη συσκευή.</string>
+</resources>

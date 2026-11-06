@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Yerel videolar</string>
+    <string name="local_add_folder">Video klasörü aç</string>
+    <string name="local_add_files">Video dosyaları aç</string>
+    <string name="local_scanning">Videolar aranıyor · %1$d hazır</string>
+    <string name="local_cancel_scan">Taramayı durdur</string>
+    <string name="local_shuffle">Karıştır</string>
+    <string name="local_scan_failed">Bazı yerel dosyalar okunamadı. Erişimi kontrol edip yenileyin.</string>
+    <string name="local_waiting">Sonraki yerel video bekleniyor…</string>
+    <string name="local_picker_unavailable">Bu cihazda belge seçici yok.</string>
+</resources>

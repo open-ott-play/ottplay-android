@@ -66,6 +66,31 @@ class CatalogDatabase(context: Context, private val vault: SourceVault) :
         }
     }
 
+    /** Append a validated local prefix without rewriting previously found rows. */
+    fun appendLocal(sourceId: String, entries: List<MediaEntry>, reset: Boolean) {
+        require(entries.size <= 64 && entries.all { it.sourceId == sourceId })
+        val db = writableDatabase
+        db.transaction {
+            if (reset) db.delete("entries", "source_id=?", arrayOf(sourceId))
+            val ordinal = db.rawQuery("SELECT COALESCE(MAX(ordinal),-1)+1 FROM entries WHERE source_id=?", arrayOf(sourceId)).use {
+                it.moveToFirst(); it.getLong(0)
+            }
+            if (entries.isNotEmpty()) {
+                val bytes = json.encodeToString(entries).encodeToByteArray()
+                require(bytes.size <= 512 * 1024)
+                db.insertOrThrow("entries", null, ContentValues().apply {
+                    put("source_id", sourceId); put("id", "local:$ordinal")
+                    put("payload", vault.encrypt(bytes)); put("ordinal", ordinal)
+                })
+            }
+            db.insertWithOnConflict("catalogs", null, ContentValues().apply {
+                put("source_id", sourceId)
+                put("payload", vault.encrypt(json.encodeToString(CatalogMetadata()).encodeToByteArray()))
+                put("updated_ms", System.currentTimeMillis())
+            }, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+    }
+
     fun read(sourceId: String): Catalog {
         val db = readableDatabase
         // Metadata and all blocks must belong to the same refresh transaction.

@@ -1,6 +1,10 @@
 package play.ott.nativeapp.data
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -64,6 +68,15 @@ class NativeRepository(
     private val refreshMutex = Mutex()
     val preferences = PreferencesStore(context)
     val providers = ProviderRepository(transportPolicy = transportPolicy)
+    private val localScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val localVideos = LocalVideoLibrary(context, localScope) { source, entries, reset, owner ->
+        withContext(Dispatchers.IO) {
+            sourceMutex.withLock {
+                check(vault.read().firstOrNull { it.id == source.id } == source) { "Local source changed" }
+                owner.persist { db.appendLocal(source.id, entries, reset) }
+            }
+        }
+    }
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     suspend fun sources(): List<SourceConfig> = withContext(Dispatchers.IO) { sourceMutex.withLock { vault.read() } }
@@ -80,7 +93,10 @@ class NativeRepository(
         refreshMutex.withLock { sourceMutex.withLock {
             val sources = vault.read()
             val previous = sources.firstOrNull { it.id == source.id }
-            if (previous != null && previous != saved) db.delete(source.id)
+            if (previous != null && previous != saved) {
+                localVideos.forget(source.id)
+                db.delete(source.id)
+            }
             vault.write(sources.filterNot { it.id == source.id } + saved)
         }}
     }
@@ -93,7 +109,16 @@ class NativeRepository(
         val scheme = source.url.toUri().scheme
         require(scheme in setOf("http", "https", "content") || source.url == DEMO_URL) { "Unsupported source address" }
         if (scheme == "http" || scheme == "https") transportPolicy.requireHttpUrl(source.url)
-        if (scheme == "content" || source.url == DEMO_URL) require(source.kind == SourceKind.M3U) { "Invalid source type" }
+        if (source.kind == SourceKind.LOCAL) {
+            val selected = if (source.localFolder) listOf(source.url) else source.localDocuments.ifEmpty { listOf(source.url) }
+            require(scheme == "content" && selected.size in 1..128 && selected.distinct().size == selected.size)
+            require(selected.all { it.length <= 8192 && it.toUri().scheme == "content" })
+            require(!source.localFolder || android.provider.DocumentsContract.isTreeUri(source.url.toUri()))
+            require(source.headers.isEmpty() && source.epgUrl.isBlank() && source.username.isBlank() && source.password.isBlank())
+        } else {
+            require(!source.localFolder && source.localDocuments.isEmpty())
+            if (scheme == "content" || source.url == DEMO_URL) require(source.kind == SourceKind.M3U) { "Invalid source type" }
+        }
         if (source.kind == SourceKind.XTREAM) require(source.username.isNotBlank() && source.password.isNotBlank()) { "Missing credentials" }
         if (source.kind == SourceKind.STALKER) require(Regex("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}").matches(source.mac)) { "Invalid MAC address" }
         if (source.epgUrl.isNotBlank()) transportPolicy.requireHttpUrl(source.epgUrl)
@@ -105,9 +130,53 @@ class NativeRepository(
     }
 
     suspend fun remove(id: String) = withContext(Dispatchers.IO) {
+        localVideos.forget(id)
         refreshMutex.withLock {
-            sourceMutex.withLock { vault.write(vault.read().filterNot { it.id == id }) }
+            sourceMutex.withLock {
+                val old = vault.read()
+                val removed = old.firstOrNull { it.id == id }
+                val remaining = old.filterNot { it.id == id }
+                vault.write(remaining)
+                if (removed?.kind == SourceKind.LOCAL) {
+                    val retained = remaining.flatMap { it.localDocuments + it.url }.toSet()
+                    (removed.localDocuments + removed.url).distinct().filterNot { it in retained }.forEach {
+                        try { context.contentResolver.releasePersistableUriPermission(it.toUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                        catch (_: SecurityException) { }
+                    }
+                }
+            }
             db.delete(id)
+        }
+    }
+
+    suspend fun addLocal(uris: List<Uri>, folder: Boolean): SourceConfig = withContext(Dispatchers.IO) {
+        require(uris.size in 1..128 && (!folder || uris.size == 1))
+        val selected = uris.map { it.toString() }.distinct()
+        require(selected.all { it.length <= 8192 && it.toUri().scheme == "content" })
+        require(!folder || android.provider.DocumentsContract.isTreeUri(uris.first()))
+        val before = context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }.map { it.uri.toString() }.toSet()
+        try {
+            selected.forEach { context.contentResolver.takePersistableUriPermission(it.toUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val key = (if (folder) "folder\u0000" else "files\u0000") + selected.sorted().joinToString("\u0000")
+            val id = "local-" + UUID.nameUUIDFromBytes(key.toByteArray(Charsets.UTF_8))
+            val label = if (folder) android.provider.DocumentsContract.getTreeDocumentId(uris.first())
+                .substringAfterLast('/').substringAfterLast(':').take(200).ifBlank { message(R.string.local_videos) }
+                else message(R.string.local_videos)
+            val source = SourceConfig(id, label, SourceKind.LOCAL, selected.first(), localFolder = folder,
+                localDocuments = if (folder) emptyList() else selected)
+            check(sources().let { values -> values.size < 100 || values.any { it.id == id } })
+            save(source)
+            source
+        } catch (error: Exception) {
+            // If stored ownership cannot be read, retaining a grant is safer
+            // than withdrawing another source's access during error cleanup.
+            val retained = runCatching { sources().flatMap { it.localDocuments + it.url }.toSet() }.getOrNull()
+                ?: throw error
+            selected.filter { it !in before && it !in retained }.forEach {
+                try { context.contentResolver.releasePersistableUriPermission(it.toUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                catch (_: SecurityException) { }
+            }
+            throw error
         }
     }
 
@@ -147,6 +216,11 @@ class NativeRepository(
     }
 
     suspend fun refresh(source: SourceConfig): Catalog = withContext(Dispatchers.IO) {
+        if (source.kind == SourceKind.LOCAL) {
+            val result = localVideos.scan(source, true).first { !it.scanning }
+            check(!result.failed && !result.cancelled) { "Local source unavailable" }
+            return@withContext Catalog(result.entries)
+        }
         refreshMutex.withLock {
             val catalog = when {
                 source.url == DEMO_URL -> Catalog(listOf(bundledDemoEntry(source.id)))
@@ -204,7 +278,12 @@ class NativeRepository(
     suspend fun programmes(entry: MediaEntry): List<Programme> = withContext(Dispatchers.IO) { db.programmes(entry) }
 
     suspend fun stream(source: SourceConfig, entry: MediaEntry): PlaybackStream =
-        if (source.url == DEMO_URL) PlaybackStream(
+        if (source.kind == SourceKind.LOCAL) {
+            check(sources().firstOrNull { it.id == source.id } == source)
+            check(localVideos.validate(source, entry)) { "Local video unavailable" }
+            check(sources().firstOrNull { it.id == source.id } == source)
+            PlaybackStream(entry.url, mimeType = entry.mimeType)
+        } else if (source.url == DEMO_URL) PlaybackStream(
             if (source.kind == SourceKind.M3U && isBundledDemoEntry(entry, source.id)) bundledDemoUrl else entry.url
         ) else providers.resolve(source, entry)
 

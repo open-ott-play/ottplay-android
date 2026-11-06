@@ -36,8 +36,7 @@ internal class ItemMediaSourceFactory(
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val resolved = PlaybackItems.resolve(mediaItem)
         PlaybackItems.requireSupported(context, resolved)
-        val http = httpFactoryFor(resolved)
-        val factory = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))
+        val factory = DefaultMediaSourceFactory(dataSourceFactoryFor(resolved))
         val config = PlaybackItems.drm(resolved)
         if (drmProvider != null) {
             factory.setDrmSessionManagerProvider(requireNotNull(drmProvider))
@@ -75,6 +74,9 @@ internal class ItemMediaSourceFactory(
             .setUserAgent("OTT-play-Android/1.0")
             .setDefaultRequestProperties(headers)
     }
+
+    internal fun dataSourceFactoryFor(item: MediaItem): DefaultDataSource.Factory =
+        DefaultDataSource.Factory(context, httpFactoryFor(item))
 
     override fun getSupportedTypes(): IntArray = DefaultMediaSourceFactory(context).supportedTypes
 

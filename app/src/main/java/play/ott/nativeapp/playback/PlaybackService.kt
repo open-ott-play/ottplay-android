@@ -46,6 +46,7 @@ class PlaybackService : MediaSessionService() {
     private var sessionPlayer: ChannelNavigationPlayer? = null
     private var httpClient: OkHttpClient? = null
     private var progress: PlaybackProgressRecorder? = null
+    private var localQueue: LocalPlaybackQueue? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
@@ -79,6 +80,7 @@ class PlaybackService : MediaSessionService() {
         player = exoPlayer
         val app = application as OttplayApplication
         val repository = app.repository
+        localQueue = LocalPlaybackQueue(exoPlayer, repository, serviceScope)
         val isTelevision = resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
         val preferencePlayer = TrackPreferencePlayer(exoPlayer, repository.preferences.data, serviceScope)
         val foregroundPlayer = if (isTelevision) ForegroundVideoPlayer(preferencePlayer) { app.playbackActivityVisible.value } else preferencePlayer
@@ -139,6 +141,7 @@ class PlaybackService : MediaSessionService() {
     // MediaSessionService's default onTaskRemoved retains ongoing playback, and stops an idle
     // service. Do not couple this to Activity onStop/onDestroy or store Activity references here.
     override fun onDestroy() {
+        localQueue?.close(); localQueue = null
         progress?.close()
         progress = null
         mediaSession?.release()

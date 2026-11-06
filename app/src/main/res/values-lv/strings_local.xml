@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Vietējie video</string>
+    <string name="local_add_folder">Atvērt video mapi</string>
+    <string name="local_add_files">Atvērt video failus</string>
+    <string name="local_scanning">Meklē video · %1$d gatavi</string>
+    <string name="local_cancel_scan">Apturēt meklēšanu</string>
+    <string name="local_shuffle">Jauktā secībā</string>
+    <string name="local_scan_failed">Dažus vietējos failus nevar nolasīt. Pārbaudiet piekļuvi un atsvaidziniet.</string>
+    <string name="local_waiting">Gaida nākamo vietējo video…</string>
+    <string name="local_picker_unavailable">Šajā ierīcē nav dokumentu atlasītāja.</string>
+</resources>

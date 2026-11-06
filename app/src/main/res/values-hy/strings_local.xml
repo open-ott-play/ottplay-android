@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Տեղային տեսանյութեր</string>
+    <string name="local_add_folder">Բացել տեսանյութերի պանակը</string>
+    <string name="local_add_files">Բացել տեսանյութերի ֆայլերը</string>
+    <string name="local_scanning">Տեսանյութերի որոնում · %1$d պատրաստ</string>
+    <string name="local_cancel_scan">Դադարեցնել որոնումը</string>
+    <string name="local_shuffle">Պատահական հերթականություն</string>
+    <string name="local_scan_failed">Որոշ տեղային ֆայլեր հնարավոր չէ կարդալ։ Ստուգեք հասանելիությունը և թարմացրեք։</string>
+    <string name="local_waiting">Սպասում է հաջորդ տեղային տեսանյութին…</string>
+    <string name="local_picker_unavailable">Այս սարքում փաստաթղթերի ընտրիչ չկա։</string>
+</resources>

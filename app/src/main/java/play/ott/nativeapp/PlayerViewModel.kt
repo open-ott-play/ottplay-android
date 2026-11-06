@@ -79,7 +79,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var resolvingSourceId: String? = null
     private var loadGeneration = 0L
     private var pending: PendingPlay? = null
-    private data class PendingPlay(val entry: MediaEntry, val stream: PlaybackStream, val positionMs: Long)
+    private data class PendingPlay(val entry: MediaEntry, val stream: PlaybackStream, val positionMs: Long, val local: Boolean = false, val shuffle: Boolean = false)
     private val listener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
             setErrorText { play.ott.nativeapp.playback.PlaybackErrors.message(getApplication(), error) }
@@ -169,6 +169,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onPlaybackSessionError() { setErrorText { message(R.string.message_channel_switch_failed) } }
+    fun onLocalPickerUnavailable() { setErrorText { message(R.string.local_picker_unavailable) } }
 
     fun onControllerFailure() { updateState { it.copy(isBusy = false) }; setErrorText { message(R.string.message_controller_unavailable) } }
 
@@ -194,6 +195,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (id != null) load(id, false)
             }
             AppAction.Refresh -> state.value.selectedSourceId?.let { load(it, true) }
+            AppAction.CancelLocalScan -> state.value.selectedSourceId?.let { repository.localVideos.cancel(it) }
+            AppAction.PlayLocalShuffle -> if (state.value.sources.any { it.id == state.value.selectedSourceId && it.kind == SourceKind.LOCAL }) {
+                state.value.entries.randomOrNull()?.let { play(it, shuffle = true) }
+            }
             is AppAction.ToggleFavorite -> operation {
                 repository.preferences.update {
                     it.copy(favorites = play.ott.core.DurableSelections.toggle(it.favorites, action.entry.id))
@@ -243,22 +248,42 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 updateState { it.copy(sources = sources) }
                 load(source.id, true)
             }
-            AppAction.ImportPlaylist, AppAction.ImportSettings, AppAction.ExportSettings -> Unit // System document launchers in Activity.
+            AppAction.ImportPlaylist, AppAction.ImportLocalFolder, AppAction.ImportLocalFiles,
+            AppAction.ImportSettings, AppAction.ExportSettings -> Unit // System document launchers in Activity.
         }
     }
 
-    private fun load(id: String, refresh: Boolean) {
+    private fun load(id: String, refresh: Boolean, autoPlay: Boolean = false) {
         loadingResource = R.string.message_loading_catalog
         errorText = null
+        val previous = state.value.selectedSourceId
+        if (previous != null && previous != id && state.value.playingEntry?.sourceId != previous) repository.localVideos.cancel(previous)
         loadJob?.cancel()
         val generation = ++loadGeneration
         detailJob?.cancel()
         updateState { it.copy(selectedSourceId = id, entries = emptyList(), epgEntry = null,
-            seriesEntry = null, isBusy = true, loadingMessage = message(loadingResource), error = null) }
+            seriesEntry = null, isBusy = true, localScanning = false, loadingMessage = message(loadingResource), error = null) }
         loadJob = viewModelScope.launch {
             try {
                 repository.preferences.update { it.copy(selectedSourceId = id) }
                 val source = repository.sources().first { it.id == id }
+                if (source.kind == SourceKind.LOCAL) {
+                    var started = !autoPlay
+                    val intent = playGeneration
+                    repository.localVideos.scan(source, refresh).first { snapshot ->
+                        ensureActive()
+                        if (generation != loadGeneration) return@first true
+                        updateState { it.copy(entries = snapshot.entries, localScanning = snapshot.scanning,
+                            isBusy = snapshot.scanning && snapshot.entries.isEmpty()) }
+                        if (!started && snapshot.entries.isNotEmpty() && intent == playGeneration) {
+                            started = true
+                            play(snapshot.entries.first())
+                        }
+                        if (snapshot.failed) setNoticeText { message(R.string.local_scan_failed) }
+                        !snapshot.scanning
+                    }
+                    return@launch
+                }
                 val cached = try { repository.cached(id) } catch (e: Exception) {
                     if (e is CancellationException || !refresh) throw e
                     Catalog(emptyList())
@@ -286,7 +311,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun play(entry: MediaEntry, resolved: PlaybackStream? = null) {
+    private fun play(entry: MediaEntry, resolved: PlaybackStream? = null, shuffle: Boolean = false) {
         if (entry.playbackUnsupportedReason != null) {
             setErrorText { message(R.string.message_unsupported_playback) }
             return
@@ -303,7 +328,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             ensureActive()
             if (generation != playGeneration) return@operation
             if (repository.sources().firstOrNull { it.id == source.id } != source) error("Source changed during playback request")
-            val request = PendingPlay(entry, stream, position)
+            val request = PendingPlay(entry, stream, position, source.kind == SourceKind.LOCAL, shuffle)
             if (controller == null) {
                 pending = request
                 updateState { it.copy(playingEntry = entry) }; setNoticeText { message(R.string.message_connecting_playback) }
@@ -323,6 +348,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         ).let { built ->
             val extras = Bundle(built.requestMetadata.extras ?: Bundle()).apply {
                 putString(EXTRA_ENTRY, entryJson.encodeToString(request.entry))
+                if (request.local) {
+                    putString(play.ott.nativeapp.playback.LocalPlaybackQueue.EXTRA_SOURCE, request.entry.sourceId)
+                    putBoolean(play.ott.nativeapp.playback.LocalPlaybackQueue.EXTRA_SHUFFLE, request.shuffle)
+                }
             }
             built.buildUpon()
                 .setRequestMetadata(built.requestMetadata.buildUpon().setExtras(extras).build())
@@ -354,6 +383,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val sources = repository.sources()
         updateState { it.copy(sources = sources) }
         load(source.id, true)
+    }
+
+    fun importLocal(uris: List<Uri>, folder: Boolean) = operation {
+        val source = repository.addLocal(uris, folder)
+        val sources = repository.sources()
+        updateState { it.copy(sources = sources) }
+        load(source.id, true, autoPlay = true)
     }
 
     fun importSettings(uri: Uri) = operation {

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_videos">Локални видеа</string>
+    <string name="local_add_folder">Отваряне на папка с видеа</string>
+    <string name="local_add_files">Отваряне на видеофайлове</string>
+    <string name="local_scanning">Търсене на видеа · готови: %1$d</string>
+    <string name="local_cancel_scan">Спиране на търсенето</string>
+    <string name="local_shuffle">Разбъркване</string>
+    <string name="local_scan_failed">Някои локални файлове не могат да се прочетат. Проверете достъпа и обновете.</string>
+    <string name="local_waiting">Изчакване на следващото локално видео…</string>
+    <string name="local_picker_unavailable">На устройството няма приложение за избор на файлове.</string>
+</resources>

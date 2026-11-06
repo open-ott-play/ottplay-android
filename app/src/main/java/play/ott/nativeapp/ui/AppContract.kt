@@ -21,6 +21,7 @@ data class AppUiState(
     val error: String? = null,
     val notice: String? = null,
     val backgroundPlayback: Boolean = true,
+    val localScanning: Boolean = false,
 )
 
 sealed interface AppAction {
@@ -39,6 +40,10 @@ sealed interface AppAction {
     data object DismissNotice : AppAction
     data object StopPlayback : AppAction
     data object ImportPlaylist : AppAction
+    data object ImportLocalFolder : AppAction
+    data object ImportLocalFiles : AppAction
+    data object CancelLocalScan : AppAction
+    data object PlayLocalShuffle : AppAction
     data object ExportSettings : AppAction
     data object ImportSettings : AppAction
     data object AddDemo : AppAction

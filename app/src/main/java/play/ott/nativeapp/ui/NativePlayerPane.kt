@@ -61,9 +61,11 @@ internal fun NativePlayerPane(
     onTrackPreference: (Boolean, TrackPreference) -> Unit,
     modifier: Modifier = Modifier,
     inPictureInPicture: Boolean = false,
+    localScanning: Boolean = false,
 ) {
     var resizeMode by rememberSaveable { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var buffering by remember(controller) { mutableStateOf(controller == null || controller.playbackState == Player.STATE_BUFFERING) }
+    var ended by remember(controller) { mutableStateOf(controller?.playbackState == Player.STATE_ENDED) }
     var playbackError by remember(controller, entry.id) { mutableStateOf(controller?.playerError?.errorCodeName) }
     var optionsOpen by remember { mutableStateOf(false) }
     var trackType by remember { mutableStateOf<Int?>(null) }
@@ -112,6 +114,7 @@ internal fun NativePlayerPane(
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 buffering = playbackState == Player.STATE_BUFFERING
+                ended = playbackState == Player.STATE_ENDED
                 if (playbackState == Player.STATE_READY) playbackError = null
             }
             override fun onPlayerError(error: PlaybackException) {
@@ -186,6 +189,8 @@ internal fun NativePlayerPane(
                 modifier = Modifier.fillMaxSize(),
             )
             if (!inPictureInPicture && (controller == null || buffering)) CircularProgressIndicator()
+            if (!inPictureInPicture && ended && localScanning) Text(stringResource(R.string.local_waiting),
+                modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = .96f)).padding(24.dp))
             playbackError?.takeUnless { inPictureInPicture }?.let {
                 Column(
                     Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = .96f)).padding(24.dp),

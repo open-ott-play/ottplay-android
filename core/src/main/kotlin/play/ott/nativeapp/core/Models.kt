@@ -3,7 +3,7 @@ package play.ott.nativeapp.core
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class SourceKind { M3U, XTREAM, STALKER }
+enum class SourceKind { M3U, XTREAM, STALKER, LOCAL }
 
 @Serializable
 enum class MediaKind { LIVE, MOVIE, SERIES, EPISODE }
@@ -24,6 +24,9 @@ data class SourceConfig(
     val nameMessage: CoreMessage? = null,
     /** Explicit edits must not be mistaken for a historical generated demo label. */
     val nameIsUserDefined: Boolean = false,
+    /** Installation-owned SAF grants. They are never provider URLs or portable permissions. */
+    val localFolder: Boolean = false,
+    val localDocuments: List<String> = emptyList(),
 ) {
     override fun toString(): String = "SourceConfig(id=$id, kind=$kind)"
 }
