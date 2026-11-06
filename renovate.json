@@ -7,8 +7,7 @@
     "custom.jsonata",
     "custom.regex",
     "github-actions",
-    "gradle",
-    "gradle-wrapper"
+    "gradle"
   ],
   "ignorePaths": [
     "**/vendor/**",
@@ -21,8 +20,7 @@
   "packageRules": [
     {
       "matchManagers": [
-        "gradle",
-        "gradle-wrapper"
+        "gradle"
       ],
       "matchFileNames": [
         "**"
@@ -33,8 +31,7 @@
     },
     {
       "matchManagers": [
-        "gradle",
-        "gradle-wrapper"
+        "gradle"
       ],
       "matchFileNames": [
         "**"
@@ -49,8 +46,7 @@
     },
     {
       "matchManagers": [
-        "gradle",
-        "gradle-wrapper"
+        "gradle"
       ],
       "matchFileNames": [
         "**"
@@ -65,8 +61,7 @@
     },
     {
       "matchManagers": [
-        "gradle",
-        "gradle-wrapper"
+        "gradle"
       ],
       "matchFileNames": [
         "**"
@@ -85,8 +80,7 @@
     },
     {
       "matchManagers": [
-        "gradle",
-        "gradle-wrapper"
+        "gradle"
       ],
       "matchFileNames": [
         "**"

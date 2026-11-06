@@ -46,3 +46,16 @@ test assertions enabled, resolve new warnings, and document any remaining
 warning with its reason and scope. Do not suppress a real security finding to
 obtain a passing check. Wait for required checks and independent review before
 merging; do not use an administrator bypass.
+
+## Gradle wrapper updates
+
+Renovate updates Gradle dependency declarations without executing repository build
+scripts. Wrapper updates, including security fixes, remain a reviewed manual unit:
+update `gradlew`, `gradlew.bat`,
+`gradle/wrapper/gradle-wrapper.jar` and
+`gradle/wrapper/gradle-wrapper.properties` together using a trusted
+Gradle installation. Verify the distribution and wrapper against the official
+Gradle checksums and retain the matching `distributionSha256Sum`. For security
+updates, verify the chosen Gradle version is in the advisory's fixed range.
+Run the existing Gradle tests and full platform CI qualification; do not enable
+unsafe wrapper execution in the dependency updater to bypass this procedure.
