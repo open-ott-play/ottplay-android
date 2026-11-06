@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Dažus vietējos failus nevar nolasīt. Pārbaudiet piekļuvi un atsvaidziniet.</string>
     <string name="local_waiting">Gaida nākamo vietējo video…</string>
     <string name="local_picker_unavailable">Šajā ierīcē nav dokumentu atlasītāja.</string>
+    <string name="local_grant_limit">Pārāk daudz saglabātu failu atļauju. Noņemiet neizmantotos vietējos avotus vai atlasiet mapi.</string>
 </resources>

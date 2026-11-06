@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Некаторыя лакальныя файлы недаступныя. Праверце доступ і абнавіце.</string>
     <string name="local_waiting">Чаканне наступнага лакальнага відэа…</string>
     <string name="local_picker_unavailable">На прыладзе няма сродку выбару файлаў.</string>
+    <string name="local_grant_limit">Зашмат захаваных дазволаў на файлы. Выдаліце непатрэбныя лакальныя крыніцы або выберыце папку.</string>
 </resources>

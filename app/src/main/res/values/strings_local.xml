@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Some local files could not be read. Check access and refresh.</string>
     <string name="local_waiting">Waiting for the next local video…</string>
     <string name="local_picker_unavailable">No document picker is available on this device.</string>
+    <string name="local_grant_limit">Too many saved file permissions. Remove unused local sources or select a folder instead.</string>
 </resources>

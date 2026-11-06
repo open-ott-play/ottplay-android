@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Деякі локальні файли недоступні. Перевірте доступ і оновіть.</string>
     <string name="local_waiting">Очікування наступного локального відео…</string>
     <string name="local_picker_unavailable">На пристрої немає засобу вибору файлів.</string>
+    <string name="local_grant_limit">Забагато збережених дозволів на файли. Видаліть непотрібні локальні джерела або виберіть папку.</string>
 </resources>

@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Unele fișiere locale nu au putut fi citite. Verifică accesul și reîmprospătează.</string>
     <string name="local_waiting">Se așteaptă următorul videoclip local…</string>
     <string name="local_picker_unavailable">Acest dispozitiv nu are un selector de documente.</string>
+    <string name="local_grant_limit">Prea multe permisiuni de fișiere salvate. Eliminați sursele locale neutilizate sau selectați un folder.</string>
 </resources>

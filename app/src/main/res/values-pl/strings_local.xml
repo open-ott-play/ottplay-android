@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Nie można odczytać części plików lokalnych. Sprawdź dostęp i odśwież.</string>
     <string name="local_waiting">Oczekiwanie na następny film lokalny…</string>
     <string name="local_picker_unavailable">Na tym urządzeniu nie ma narzędzia wyboru dokumentów.</string>
+    <string name="local_grant_limit">Zbyt wiele zapisanych uprawnień do plików. Usuń nieużywane źródła lokalne lub wybierz folder.</string>
 </resources>

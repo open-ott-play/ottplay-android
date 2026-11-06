@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Някои локални файлове не могат да се прочетат. Проверете достъпа и обновете.</string>
     <string name="local_waiting">Изчакване на следващото локално видео…</string>
     <string name="local_picker_unavailable">На устройството няма приложение за избор на файлове.</string>
+    <string name="local_grant_limit">Твърде много запазени разрешения за файлове. Премахнете неизползваните локални източници или изберете папка.</string>
 </resources>

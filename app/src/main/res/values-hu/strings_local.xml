@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Néhány helyi fájl nem olvasható. Ellenőrizze a hozzáférést és frissítsen.</string>
     <string name="local_waiting">Várakozás a következő helyi videóra…</string>
     <string name="local_picker_unavailable">Ezen az eszközön nincs dokumentumválasztó.</string>
+    <string name="local_grant_limit">Túl sok mentett fájlengedély. Távolítsa el a nem használt helyi forrásokat, vagy válasszon mappát.</string>
 </resources>

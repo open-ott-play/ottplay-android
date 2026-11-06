@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Kai kurių vietinių failų nepavyko perskaityti. Patikrinkite prieigą ir atnaujinkite.</string>
     <string name="local_waiting">Laukiama kito vietinio vaizdo įrašo…</string>
     <string name="local_picker_unavailable">Šiame įrenginyje nėra dokumentų parinkiklio.</string>
+    <string name="local_grant_limit">Per daug išsaugotų failų leidimų. Pašalinkite nenaudojamus vietinius šaltinius arba pasirinkite aplanką.</string>
 </resources>

@@ -9,4 +9,5 @@
     <string name="local_scan_failed">לא ניתן לקרוא חלק מהקבצים המקומיים. יש לבדוק הרשאות ולרענן.</string>
     <string name="local_waiting">ממתין לסרטון המקומי הבא…</string>
     <string name="local_picker_unavailable">אין בורר מסמכים במכשיר זה.</string>
+    <string name="local_grant_limit">נשמרו הרשאות רבות מדי לקבצים. יש להסיר מקורות מקומיים שאינם בשימוש או לבחור תיקייה.</string>
 </resources>

@@ -9,6 +9,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
@@ -27,7 +28,7 @@ class LocalVideoScannerTest {
         override suspend fun readable(source: SourceConfig, document: LocalDocument, owner: LocalVideoOwner) = true
     }
 
-    @Test fun firstFileIsPersistedWhileThreeDirectoryCallsRemainBlocked() = runTest {
+    @Test fun firstFileIsPersistedWhileFourDirectoryCallsRemainBlocked() = runTest {
         val release = CompletableDeferred<Unit>()
         val writes = mutableListOf<Pair<Boolean, List<MediaEntry>>>()
         var active = 0
@@ -46,8 +47,7 @@ class LocalVideoScannerTest {
                 } finally { active-- }
             }
             override suspend fun readable(source: SourceConfig, document: LocalDocument, owner: LocalVideoOwner): Boolean {
-                active++; maximum = maxOf(maximum, active)
-                active--; return true
+                error("Discovery must not open original file bodies")
             }
         }
         val scanner = LocalVideoScanner(backgroundScope, StandardTestDispatcher(testScheduler), docs) { _, entries, reset, owner ->
@@ -60,7 +60,7 @@ class LocalVideoScannerTest {
         assertEquals(scan.state.value.entries, writes.single().second)
         assertTrue(writes.single().first)
         assertEquals(4, maximum)
-        assertEquals(3, active)
+        assertEquals(4, active)
         scan.cancel(); release.complete(Unit); runCurrent()
         assertFalse(scan.state.value.scanning)
         assertTrue(scan.state.value.cancelled)
@@ -135,21 +135,13 @@ class LocalVideoScannerTest {
                 if (uri == source.url) {
                     emit(video("first"))
                     check(published.await(5, TimeUnit.SECONDS))
-                    emit(directory("a")); emit(directory("b")); emit(video("blocked"))
+                    emit(directory("a")); emit(directory("b")); emit(directory("c"))
                 }
                 saturated.countDown()
                 check(release.await(10, TimeUnit.SECONDS))
                 owner.check()
             }
             override suspend fun document(source: SourceConfig, uri: String, owner: LocalVideoOwner) = video("first")
-            override suspend fun readable(source: SourceConfig, document: LocalDocument, owner: LocalVideoOwner): Boolean {
-                if (document.name == "blocked.mp4") {
-                    saturated.countDown()
-                    check(release.await(10, TimeUnit.SECONDS))
-                    owner.check()
-                }
-                return true
-            }
         }
         val library = LocalVideoLibrary(scope, docs, background, demand) { _, _, _, _ -> published.countDown() }
         try {
@@ -164,6 +156,70 @@ class LocalVideoScannerTest {
             scope.coroutineContext[Job]?.cancelAndJoin()
             background.close(); demand.close()
         }
+    }
+
+    @Test fun metadataScanDoesNotOpenBodiesAndSelectionSkipsOnlyFailedCandidates() = runTest {
+        val opened = mutableListOf<String>()
+        val docs = object : Documents() {
+            override suspend fun folder(source: SourceConfig, uri: String, group: String, owner: LocalVideoOwner, emit: suspend (LocalDocument) -> Unit) {
+                repeat(100) { emit(video("file-$it")) }
+            }
+            override suspend fun readable(source: SourceConfig, document: LocalDocument, owner: LocalVideoOwner): Boolean {
+                opened.add(document.uri)
+                return document.uri != video("file-0").uri
+            }
+        }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val library = LocalVideoLibrary(backgroundScope, docs, dispatcher, dispatcher) { _, _, _, _ -> }
+        val observed = library.scan(source)
+        runCurrent()
+        assertFalse(observed.value.scanning)
+        assertEquals(100, observed.value.entries.size)
+        assertTrue(opened.isEmpty())
+        val selected = async { firstPlayableLocalVideo(observed) { library.validate(source, it) } }
+        runCurrent()
+        assertEquals(video("file-1").uri, selected.await()?.url)
+        assertEquals(listOf(video("file-0").uri, video("file-1").uri), opened)
+    }
+
+    @Test fun automaticStartAdmitsOnlyTwoUnfinishedCandidateChecks() = runTest {
+        val release = CompletableDeferred<Unit>()
+        var opened = 0
+        val docs = object : Documents() {
+            override suspend fun folder(source: SourceConfig, uri: String, group: String, owner: LocalVideoOwner, emit: suspend (LocalDocument) -> Unit) {
+                repeat(100) { emit(video("file-$it")) }
+            }
+            override suspend fun readable(source: SourceConfig, document: LocalDocument, owner: LocalVideoOwner): Boolean {
+                opened++
+                release.await()
+                return true
+            }
+        }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val library = LocalVideoLibrary(backgroundScope, docs, dispatcher, dispatcher) { _, _, _, _ -> }
+        val observed = library.scan(source)
+        runCurrent()
+        val selected = async { firstPlayableLocalVideo(observed) { library.validate(source, it) } }
+        runCurrent()
+        assertEquals(2, opened)
+        selected.cancelAndJoin()
+        release.complete(Unit); runCurrent()
+        assertEquals(2, opened)
+    }
+
+    @Test fun arrivalsAtFlushDeadlinePreserveEveryRowAndCompletion() = runTest {
+        val docs = object : Documents() {
+            override suspend fun folder(source: SourceConfig, uri: String, group: String, owner: LocalVideoOwner, emit: suspend (LocalDocument) -> Unit) {
+                repeat(20) { index -> delay(250); emit(video("file-$index")) }
+                delay(250) // The completion itself races the same flush deadline.
+            }
+        }
+        val scan = LocalVideoScanner(backgroundScope, StandardTestDispatcher(testScheduler), docs) { _, _, _, _ -> }.start(source, 1)
+        runCurrent()
+        repeat(21) { advanceTimeBy(250); runCurrent() }
+        assertFalse(scan.state.value.scanning)
+        assertFalse(scan.state.value.failed)
+        assertEquals((0 until 20).map { video("file-$it").uri }, scan.state.value.entries.map { it.url })
     }
 
     @Test fun cancellingDemandSignalsProviderImmediatelyAndNeverReturnsLatePlayback() = runBlocking {

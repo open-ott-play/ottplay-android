@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Baʼzi mahalliy fayllarni oʻqib boʻlmadi. Ruxsatlarni tekshiring va yangilang.</string>
     <string name="local_waiting">Keyingi mahalliy video kutilmoqda…</string>
     <string name="local_picker_unavailable">Bu qurilmada hujjat tanlash vositasi yoʻq.</string>
+    <string name="local_grant_limit">Saqlangan fayl ruxsatlari juda ko‘p. Ishlatilmayotgan mahalliy manbalarni olib tashlang yoki jild tanlang.</string>
 </resources>

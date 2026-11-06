@@ -5,7 +5,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.security.MessageDigest
@@ -70,7 +72,8 @@ internal fun localVideoId(sourceId: String, uri: String): String = "local-video:
     MessageDigest.getInstance("SHA-256").digest((sourceId + "\u0000" + uri).toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
 
-/** Four owned operations include directory enumeration and file validation together. */
+/** Four owned metadata operations; original file bodies are opened only for playback. */
+@OptIn(ExperimentalCoroutinesApi::class)
 internal class LocalVideoScanner(
     private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher,
@@ -83,12 +86,10 @@ internal class LocalVideoScanner(
     private sealed interface Work {
         data class Folder(val uri: String, val group: String) : Work
         data class SelectedFile(val uri: String) : Work
-        data class File(val document: LocalDocument) : Work
     }
     private sealed interface Event {
         data class Document(val document: LocalDocument) : Event
-        data class Ready(val entry: MediaEntry) : Event
-        data class Done(val failed: Boolean, val discovery: Boolean) : Event
+        data class Done(val failed: Boolean) : Event
     }
 
     fun start(source: SourceConfig, generation: Long): Scan {
@@ -101,7 +102,6 @@ internal class LocalVideoScanner(
             val published = linkedMapOf<String, MediaEntry>()
             val batch = arrayListOf<MediaEntry>()
             var active = 0
-            var discovery = 0
             var failed = false
             var persisted = false
             if (source.localFolder) pending.add(Work.Folder(source.url, ""))
@@ -119,8 +119,6 @@ internal class LocalVideoScanner(
             }
             fun launch(work: Work) {
                 active++
-                val finding = work !is Work.File
-                if (finding) discovery++
                 scope.launch(dispatcher) {
                     var problem = false
                     try {
@@ -128,40 +126,35 @@ internal class LocalVideoScanner(
                         when (work) {
                             is Work.Folder -> documents.folder(source, work.uri, work.group, owner) { events.send(Event.Document(it)) }
                             is Work.SelectedFile -> documents.document(source, work.uri, owner)?.let { events.send(Event.Document(it)) }
-                            is Work.File -> if (documents.readable(source, work.document, owner)) {
-                                owner.check()
-                                val item = work.document
-                                events.send(Event.Ready(MediaEntry(localVideoId(source.id, item.uri), source.id, item.name,
-                                    item.uri, MediaKind.MOVIE, group = item.group, mimeType = item.mime, headerOrigins = emptyMap())))
-                            } else problem = true
                         }
                     } catch (_: CancellationException) { }
                     catch (_: Exception) { problem = true }
-                    finally { events.send(Event.Done(problem, finding)) }
+                    finally { events.send(Event.Done(problem)) }
                 }
             }
             try {
                 while (active > 0 || pending.isNotEmpty()) {
                     if (owner.cancelled) pending.clear()
                     while (!owner.cancelled && active < 4 && pending.isNotEmpty()) {
-                        // Keep one slot for a ready file even when nested
-                        // directory providers stop responding mid-enumeration.
-                        val next = pending.firstOrNull { discovery < 3 || it is Work.File } ?: break
-                        pending.remove(next)
+                        val next = pending.removeFirst()
                         launch(next)
                     }
                     if (active == 0) break
-                    when (val event = withTimeoutOrNull(250) { events.receive() }) {
+                    when (val event = select<Event?> {
+                        events.onReceive { it }
+                        onTimeout(250) { null }
+                    }) {
                         is Event.Document -> if (!owner.cancelled && discovered.add(event.document.uri)) {
                             if (discovered.size > 20_000) { failed = true; owner.cancel() }
                             else if (event.document.directory) pending.addFirst(Work.Folder(event.document.uri, event.document.group))
-                            else pending.addFirst(Work.File(event.document))
+                            else {
+                                val item = event.document
+                                batch.add(MediaEntry(localVideoId(source.id, item.uri), source.id, item.name,
+                                    item.uri, MediaKind.MOVIE, group = item.group, mimeType = item.mime, headerOrigins = emptyMap()))
+                                if (published.isEmpty() || batch.size >= 64) flush()
+                            }
                         }
-                        is Event.Ready -> if (!owner.cancelled && !published.containsKey(event.entry.id)) {
-                            batch.add(event.entry)
-                            if (published.isEmpty() || batch.size >= 64) flush()
-                        }
-                        is Event.Done -> { active--; if (event.discovery) discovery--; failed = failed || event.failed }
+                        is Event.Done -> { active--; failed = failed || event.failed }
                         null -> flush()
                     }
                 }

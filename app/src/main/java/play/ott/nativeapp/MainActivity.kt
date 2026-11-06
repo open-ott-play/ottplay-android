@@ -2,7 +2,6 @@ package play.ott.nativeapp
 
 import android.app.PictureInPictureParams
 import android.content.ComponentName
-import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -52,7 +51,6 @@ open class MainActivity : AppCompatActivity() {
     }
     private val importPlaylist = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { }
             val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                 if (it.moveToFirst()) it.getString(0) else null
             } ?: getString(R.string.local_playlist)

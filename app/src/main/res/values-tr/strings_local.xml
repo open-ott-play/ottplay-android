@@ -9,4 +9,5 @@
     <string name="local_scan_failed">Bazı yerel dosyalar okunamadı. Erişimi kontrol edip yenileyin.</string>
     <string name="local_waiting">Sonraki yerel video bekleniyor…</string>
     <string name="local_picker_unavailable">Bu cihazda belge seçici yok.</string>
+    <string name="local_grant_limit">Çok fazla kayıtlı dosya izni var. Kullanılmayan yerel kaynakları kaldırın veya bir klasör seçin.</string>
 </resources>

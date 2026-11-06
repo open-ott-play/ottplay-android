@@ -68,8 +68,10 @@ class PlaybackService : MediaSessionService() {
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
         httpClient = client
+        val app = application as OttplayApplication
+        val repository = app.repository
         val exoPlayer = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(ItemMediaSourceFactory(this, client))
+            .setMediaSourceFactory(ItemMediaSourceFactory(this, client, localValidator = { validateLocalPlayback(repository, it) }))
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
                 true,
@@ -78,8 +80,6 @@ class PlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         player = exoPlayer
-        val app = application as OttplayApplication
-        val repository = app.repository
         localQueue = LocalPlaybackQueue(exoPlayer, repository, serviceScope)
         val isTelevision = resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
         val preferencePlayer = TrackPreferencePlayer(exoPlayer, repository.preferences.data, serviceScope)

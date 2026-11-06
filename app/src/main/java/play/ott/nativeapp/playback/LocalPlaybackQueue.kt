@@ -3,6 +3,7 @@ package play.ott.nativeapp.playback
 import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -33,14 +34,17 @@ internal class LocalPlaybackQueue(
     private var sourceId: String? = null
     private var generation = 0L
     private var advancing = false
+    private var failedItem = false
 
     init { player.addListener(this); changed(player.currentMediaItem) }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = changed(mediaItem)
     override fun onPlaybackStateChanged(playbackState: Int) { advanceFromEnd() }
+    override fun onPlayerError(error: PlaybackException) { failedItem = true; advanceFromEnd() }
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { if (playWhenReady) advanceFromEnd() }
 
     private fun changed(item: MediaItem?) {
+        failedItem = false
         val selected = item?.requestMetadata?.extras?.getString(EXTRA_SOURCE)
         // Automatic progression belongs to the same accepted queue. Explicit
         // replacement resets it, even when the source itself did not change.
@@ -71,8 +75,9 @@ internal class LocalPlaybackQueue(
     }
 
     private fun advanceFromEnd() {
-        if (advancing || sourceId == null || player.playbackState != Player.STATE_ENDED || !player.playWhenReady || !player.hasNextMediaItem()) return
+        if (advancing || sourceId == null || (!failedItem && player.playbackState != Player.STATE_ENDED) || !player.playWhenReady || !player.hasNextMediaItem()) return
         advancing = true
+        failedItem = false
         try {
             player.seekToNextMediaItem()
             player.prepare()

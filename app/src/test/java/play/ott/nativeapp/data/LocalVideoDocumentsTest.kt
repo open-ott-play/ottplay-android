@@ -8,12 +8,16 @@ import android.content.pm.ProviderInfo
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.test.core.app.ApplicationProvider
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import org.junit.Assert.*
 import org.junit.Test
@@ -25,6 +29,8 @@ import org.robolectric.util.ReflectionHelpers
 import play.ott.nativeapp.core.*
 import play.ott.nativeapp.playback.ItemMediaSourceFactory
 import play.ott.nativeapp.playback.PlaybackItems
+import play.ott.nativeapp.playback.LocalPlaybackQueue
+import play.ott.nativeapp.playback.validateLocalPlayback
 import play.ott.nativeapp.playback.PlaybackTestApplication
 import java.io.File
 import javax.crypto.KeyGenerator
@@ -132,4 +138,89 @@ class LocalVideoDocumentsTest {
             assertFalse(file in permissions)
         } finally { db.close() }
     }
+    @Test fun realProviderDiscoveryOpensNoOriginalUntilAPlaybackCandidateIsChosen() = runBlocking {
+        val provider = install()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.contentResolver.takePersistableUriPermission(root, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val source = SourceConfig("folder", "Folder", SourceKind.LOCAL, root.toString(), localFolder = true)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val library = LocalVideoLibrary(scope, AndroidLocalVideoDocuments(context), Dispatchers.IO) { _, _, _, _ -> }
+        try {
+            val observed = library.scan(source)
+            val found = withTimeout(5000) { observed.first { !it.scanning }.entries }
+            assertEquals(1, found.size)
+            assertTrue(provider.queries > 0)
+            assertEquals(0, provider.opens)
+            assertEquals(found.single(), firstPlayableLocalVideo(observed) { library.validate(source, it) })
+            assertEquals(1, provider.opens)
+        } finally { scope.cancel() }
+    }
+
+    @Test fun queuedMediaValidatesAtOpenAndRejectsRevokedOrDifferentDocuments() = runBlocking {
+        val provider = install()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = NativeRepository(context)
+        val vault: SourceVault = ReflectionHelpers.getField(repository, "vault")
+        val db: CatalogDatabase = ReflectionHelpers.getField(repository, "db")
+        val key = KeyGenerator.getInstance("AES").apply { init(128) }.generateKey()
+        ReflectionHelpers.setField(vault, "key\$delegate", lazy { key })
+        try {
+            val source = repository.addLocal(listOf(root), true)
+            val entry = MediaEntry(localVideoId(source.id, file.toString()), source.id, "One", file.toString(), mimeType = "video/mp4")
+            val built = PlaybackItems.build(entry.id, entry.name, entry.url, mimeType = entry.mimeType)
+            val item = built.buildUpon().setRequestMetadata(built.requestMetadata.buildUpon().setExtras(
+                Bundle(built.requestMetadata.extras ?: Bundle()).apply {
+                    putString(LocalPlaybackQueue.EXTRA_SOURCE, source.id)
+                    putString("play.ott.nativeapp.entry", Json.encodeToString(entry))
+                }
+            ).build()).build()
+            val factory = ItemMediaSourceFactory(context, OkHttpClient(), localValidator = { validateLocalPlayback(repository, it) })
+                .dataSourceFactoryFor(item)
+            assertEquals(0, provider.opens)
+            val data = factory.createDataSource()
+            try {
+                data.open(DataSpec.Builder().setUri(file).setPosition(9).setLength(5).build())
+                val buffer = ByteArray(5)
+                assertEquals(5, data.read(buffer, 0, 5))
+                assertEquals("video", buffer.toString(Charsets.UTF_8))
+            } finally { data.close() }
+            assertEquals(2, provider.opens) // Selected-file validation, then the direct Media3 original.
+            context.contentResolver.releasePersistableUriPermission(root, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val revoked = factory.createDataSource()
+            try { assertTrue(runCatching { revoked.open(DataSpec.Builder().setUri(file).build()) }.isFailure) }
+            finally { revoked.close() }
+            val different = factory.createDataSource()
+            try { assertTrue(runCatching { different.open(DataSpec.Builder().setUri(root).build()) }.isFailure) }
+            finally { different.close() }
+            assertEquals(2, provider.opens)
+        } finally { db.close() }
+    }
+
+    @Test @Config(sdk = [30]) fun fullGrantBudgetRejectsNewSelectionsWithoutEvictingExistingPermissions() {
+        val resolver = ApplicationProvider.getApplicationContext<Context>().contentResolver
+        val old = (0 until 127).map { Uri.parse("content://grants.test/document/$it") }
+        old.forEach { resolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        // Write-only grants consume the same system budget as read grants.
+        val writeOnly = Uri.parse("content://grants.test/document/write-only")
+        resolver.takePersistableUriPermission(writeOnly, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        val before = resolver.persistedUriPermissions.map { it.uri }.toSet()
+        val failure = runCatching { PersistedDocumentGrants.take(resolver, listOf(file), "capacity exceeded") }.exceptionOrNull()
+        assertEquals("capacity exceeded", failure?.message)
+        assertEquals(before, resolver.persistedUriPermissions.map { it.uri }.toSet())
+        PersistedDocumentGrants.take(resolver, listOf(old.first(), old.first()), "capacity exceeded")
+        assertEquals(before, resolver.persistedUriPermissions.map { it.uri }.toSet())
+    }
+
+    @Test @Config(sdk = [30]) fun grantPreflightCountsOnlyNewDistinctSelections() {
+        val resolver = ApplicationProvider.getApplicationContext<Context>().contentResolver
+        val old = (0 until 127).map { Uri.parse("content://grants.test/document/$it") }
+        old.forEach { resolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        PersistedDocumentGrants.take(resolver, listOf(old.first(), file, file), "capacity exceeded")
+        assertEquals(128, resolver.persistedUriPermissions.size)
+        assertTrue(resolver.persistedUriPermissions.any { it.uri == file && it.isReadPermission })
+        val next = Uri.parse("content://grants.test/document/overflow")
+        assertTrue(runCatching { PersistedDocumentGrants.take(resolver, listOf(next), "capacity exceeded") }.isFailure)
+        assertEquals(128, resolver.persistedUriPermissions.size)
+    }
+
 }

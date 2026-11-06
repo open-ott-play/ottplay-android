@@ -9,4 +9,5 @@
     <string name="local_scan_failed">No se pudieron leer algunos archivos locales. Comprueba el acceso y actualiza.</string>
     <string name="local_waiting">Esperando el siguiente vídeo local…</string>
     <string name="local_picker_unavailable">Este dispositivo no tiene un selector de documentos.</string>
+    <string name="local_grant_limit">Demasiados permisos de archivo guardados. Elimina las fuentes locales que no uses o selecciona una carpeta.</string>
 </resources>

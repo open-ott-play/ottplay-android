@@ -66,6 +66,7 @@ class NativeRepository(
     private val db = CatalogDatabase(context, vault)
     private val sourceMutex = Mutex()
     private val refreshMutex = Mutex()
+    private val localImportMutex = Mutex()
     val preferences = PreferencesStore(context)
     val providers = ProviderRepository(transportPolicy = transportPolicy)
     private val localScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -149,14 +150,13 @@ class NativeRepository(
         }
     }
 
-    suspend fun addLocal(uris: List<Uri>, folder: Boolean): SourceConfig = withContext(Dispatchers.IO) {
+    suspend fun addLocal(uris: List<Uri>, folder: Boolean): SourceConfig = withContext(Dispatchers.IO) { localImportMutex.withLock {
         require(uris.size in 1..128 && (!folder || uris.size == 1))
         val selected = uris.map { it.toString() }.distinct()
         require(selected.all { it.length <= 8192 && it.toUri().scheme == "content" })
         require(!folder || android.provider.DocumentsContract.isTreeUri(uris.first()))
-        val before = context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }.map { it.uri.toString() }.toSet()
+        val before = PersistedDocumentGrants.take(context.contentResolver, selected.map { it.toUri() }, message(R.string.local_grant_limit))
         try {
-            selected.forEach { context.contentResolver.takePersistableUriPermission(it.toUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             val key = (if (folder) "folder\u0000" else "files\u0000") + selected.sorted().joinToString("\u0000")
             val id = "local-" + UUID.nameUUIDFromBytes(key.toByteArray(Charsets.UTF_8))
             val label = if (folder) android.provider.DocumentsContract.getTreeDocumentId(uris.first())
@@ -178,7 +178,7 @@ class NativeRepository(
             }
             throw error
         }
-    }
+    }}
 
     // Keep the R reference visible to release resource shrinking, while persisting its stable name.
     private val bundledDemoUrl: String

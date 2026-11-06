@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.Looper
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.core.app.ApplicationProvider
@@ -103,4 +104,24 @@ class LocalPlaybackQueueTest {
             assertEquals(1, exo.mediaItemCount)
         } finally { queue.close(); exo.release() }
     }
+    @Test fun unreadableCurrentCandidateAdvancesToLatePlayableItemWithoutIgnoringPause() = runTest {
+        val exo = ExoPlayer.Builder(ApplicationProvider.getApplicationContext<Context>()).build()
+        exo.setMediaItem(firstItem())
+        val player = EndedPlayer(exo).apply { ended = false; ready = false }
+        val snapshots = MutableStateFlow(LocalVideoSnapshot(source.id, 1, listOf(entry("first"))))
+        val queue = LocalPlaybackQueue(player, backgroundScope, { source }, { snapshots })
+        try {
+            runCurrent()
+            queue.onPlayerError(PlaybackException("missing original", null, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND))
+            snapshots.value = snapshots.value.copy(entries = listOf(entry("first"), entry("second")))
+            runCurrent()
+            assertEquals(0, player.advances)
+            player.ready = true
+            queue.onPlayWhenReadyChanged(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+            assertEquals(1, player.advances)
+            assertEquals("second", exo.currentMediaItem?.mediaId)
+            assertEquals(1, player.prepares)
+        } finally { queue.close(); exo.release() }
+    }
+
 }
