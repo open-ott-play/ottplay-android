@@ -26,7 +26,7 @@ jobs:
     with:
       runner: ${{ vars.CI_RUNNER_MODE == 'k3s' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && 'ottplay-k3s-linux-x64' || 'ubuntu-latest' }}
       force-full: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
-      documentation-paths: '["store/README.md"]'
+      documentation-paths: "[\"store/README.md\", \"GOVERNANCE.md\", \"ROADMAP.md\"]"
       required-paths: '["docs/privacy-policy.md"]'
 
   build:
