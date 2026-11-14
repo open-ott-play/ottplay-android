@@ -1,6 +1,7 @@
 package play.ott.nativeapp.data
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -26,6 +27,86 @@ class LocalVideoScannerTest {
         override suspend fun folder(source: SourceConfig, uri: String, group: String, owner: LocalVideoOwner, emit: suspend (LocalDocument) -> Unit) = Unit
         override suspend fun document(source: SourceConfig, uri: String, owner: LocalVideoOwner) = LocalDocument(uri, "video.mp4", "video/mp4", false, "")
         override suspend fun readable(source: SourceConfig, document: LocalDocument, owner: LocalVideoOwner) = true
+    }
+
+    @Test fun completionDeliveredToCancelledReceiverDoesNotStrandScan() = runTest {
+        val workerScheduler = TestCoroutineScheduler()
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
+        val scan = LocalVideoScanner(scope, StandardTestDispatcher(workerScheduler), Documents()) { _, _, _, _ -> }.start(source, 1)
+        try {
+            runCurrent() // Coordinator suspends waiting for a worker event.
+            workerScheduler.runCurrent() // Done is delivered, but the receiver has not resumed.
+            job.cancel(); runCurrent()
+            assertTrue(job.isCompleted)
+            assertFalse(scan.state.value.scanning)
+            assertTrue(scan.state.value.cancelled)
+            assertFalse(scan.state.value.failed)
+        } finally { job.cancel(); workerScheduler.runCurrent(); runCurrent() }
+    }
+
+    @Test fun cancellationRetainsAdmittedWorkerUntilItsDispatcherStarts() = runTest {
+        val workerScheduler = TestCoroutineScheduler()
+        val job = SupervisorJob()
+        val errors = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+        val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler) + CoroutineExceptionHandler { _, error -> errors.add(error) })
+        var providerCalls = 0
+        val docs = object : Documents() {
+            override suspend fun folder(source: SourceConfig, uri: String, group: String, owner: LocalVideoOwner, emit: suspend (LocalDocument) -> Unit) {
+                providerCalls++
+            }
+        }
+        val scan = LocalVideoScanner(scope, StandardTestDispatcher(workerScheduler), docs) { _, _, _, _ -> error("Cancelled scan must not publish") }.start(source, 1)
+        try {
+            runCurrent() // Admit a worker without allowing its dispatcher to enter the body.
+            job.cancel(); runCurrent()
+            assertTrue(scan.owner.cancelled)
+            assertTrue(scan.state.value.scanning)
+            assertFalse(job.isCompleted)
+            workerScheduler.runCurrent(); runCurrent()
+            assertTrue(job.isCompleted)
+            assertFalse(scan.state.value.scanning)
+            assertTrue(scan.state.value.cancelled)
+            assertFalse(scan.state.value.failed)
+            assertEquals(0, providerCalls)
+            assertTrue(errors.isEmpty())
+        } finally {
+            job.cancel(); workerScheduler.runCurrent(); runCurrent()
+        }
+    }
+
+    @Test fun scopeCancellationDrainsBlockedProviderWithoutClosingItsCompletionChannel() = runBlocking {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val errors = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.Default + CoroutineExceptionHandler { _, error -> errors.add(error) })
+        val docs = object : Documents() {
+            override suspend fun folder(source: SourceConfig, uri: String, group: String, owner: LocalVideoOwner, emit: suspend (LocalDocument) -> Unit) {
+                entered.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+                owner.check()
+            }
+        }
+        val scan = LocalVideoScanner(scope, dispatcher, docs) { _, _, _, _ -> error("Cancelled scan must not publish") }.start(source, 1)
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            job.cancel()
+            withTimeout(5000) { while (!scan.owner.cancelled) yield() }
+            assertTrue(scan.state.value.scanning)
+            assertFalse(job.isCompleted)
+            release.countDown()
+            withTimeout(5000) { job.join() }
+            assertFalse(scan.state.value.scanning)
+            assertTrue(scan.state.value.cancelled)
+            assertFalse(scan.state.value.failed)
+            assertTrue(errors.isEmpty())
+        } finally {
+            release.countDown(); job.cancel()
+            withTimeout(5000) { job.join() }
+            dispatcher.close()
+        }
     }
 
     @Test fun firstFileIsPersistedWhileFourDirectoryCallsRemainBlocked() = runTest {

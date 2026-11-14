@@ -3,6 +3,11 @@ package play.ott.nativeapp.data
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -97,6 +102,7 @@ internal class LocalVideoScanner(
         val state = MutableStateFlow(LocalVideoSnapshot(source.id, generation))
         scope.launch {
             val events = Channel<Event>(64)
+            val workers = mutableSetOf<Job>()
             val pending = ArrayDeque<Work>()
             val discovered = hashSetOf<String>()
             val published = linkedMapOf<String, MediaEntry>()
@@ -119,9 +125,11 @@ internal class LocalVideoScanner(
             }
             fun launch(work: Work) {
                 active++
-                scope.launch(dispatcher) {
+                workers.removeAll { it.isCompleted }
+                workers.add(scope.launch(dispatcher, start = CoroutineStart.ATOMIC) {
                     var problem = false
                     try {
+                        ensureActive()
                         owner.check()
                         when (work) {
                             is Work.Folder -> documents.folder(source, work.uri, work.group, owner) { events.send(Event.Document(it)) }
@@ -129,8 +137,8 @@ internal class LocalVideoScanner(
                         }
                     } catch (_: CancellationException) { }
                     catch (_: Exception) { problem = true }
-                    finally { events.send(Event.Done(problem)) }
-                }
+                    finally { withContext(NonCancellable) { events.send(Event.Done(problem)) } }
+                })
             }
             try {
                 while (active > 0 || pending.isNotEmpty()) {
@@ -160,12 +168,22 @@ internal class LocalVideoScanner(
                 }
                 flush()
                 if (!owner.cancelled && !persisted) persist(source, emptyList(), true, owner)
-            } catch (_: Exception) {
-                failed = true
+            } catch (error: Exception) {
+                failed = failed || error !is CancellationException
                 owner.cancel()
-                // Workers may be inside a non-interruptible provider call. Keep
-                // receiving their completions rather than dropping their owner.
-                while (active > 0) if (events.receive() is Event.Done) active--
+                // Prompt cancellation can lose a Done already handed to select.
+                // Join the actual jobs while draining events: a completion send
+                // can itself be blocked by the bounded channel until we receive.
+                withContext(NonCancellable) {
+                    while (true) {
+                        workers.removeAll { it.isCompleted }
+                        if (workers.isEmpty()) break
+                        select<Unit> {
+                            events.onReceive { }
+                            workers.forEach { worker -> worker.onJoin { } }
+                        }
+                    }
+                }
             } finally {
                 state.value = LocalVideoSnapshot(source.id, generation, published.values.toList(),
                     scanning = false, cancelled = owner.cancelled, failed = failed)
