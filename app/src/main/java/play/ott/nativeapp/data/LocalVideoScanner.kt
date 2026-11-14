@@ -3,6 +3,10 @@ package play.ott.nativeapp.data
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -119,9 +123,10 @@ internal class LocalVideoScanner(
             }
             fun launch(work: Work) {
                 active++
-                scope.launch(dispatcher) {
+                scope.launch(dispatcher, start = CoroutineStart.ATOMIC) {
                     var problem = false
                     try {
+                        ensureActive()
                         owner.check()
                         when (work) {
                             is Work.Folder -> documents.folder(source, work.uri, work.group, owner) { events.send(Event.Document(it)) }
@@ -129,7 +134,7 @@ internal class LocalVideoScanner(
                         }
                     } catch (_: CancellationException) { }
                     catch (_: Exception) { problem = true }
-                    finally { events.send(Event.Done(problem)) }
+                    finally { withContext(NonCancellable) { events.send(Event.Done(problem)) } }
                 }
             }
             try {
@@ -160,12 +165,14 @@ internal class LocalVideoScanner(
                 }
                 flush()
                 if (!owner.cancelled && !persisted) persist(source, emptyList(), true, owner)
-            } catch (_: Exception) {
-                failed = true
+            } catch (error: Exception) {
+                failed = failed || error !is CancellationException
                 owner.cancel()
                 // Workers may be inside a non-interruptible provider call. Keep
                 // receiving their completions rather than dropping their owner.
-                while (active > 0) if (events.receive() is Event.Done) active--
+                withContext(NonCancellable) {
+                    while (active > 0) if (events.receive() is Event.Done) active--
+                }
             } finally {
                 state.value = LocalVideoSnapshot(source.id, generation, published.values.toList(),
                     scanning = false, cancelled = owner.cancelled, failed = failed)
