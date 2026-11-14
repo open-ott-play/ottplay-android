@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.channels.Channel
@@ -101,6 +102,7 @@ internal class LocalVideoScanner(
         val state = MutableStateFlow(LocalVideoSnapshot(source.id, generation))
         scope.launch {
             val events = Channel<Event>(64)
+            val workers = mutableSetOf<Job>()
             val pending = ArrayDeque<Work>()
             val discovered = hashSetOf<String>()
             val published = linkedMapOf<String, MediaEntry>()
@@ -123,7 +125,8 @@ internal class LocalVideoScanner(
             }
             fun launch(work: Work) {
                 active++
-                scope.launch(dispatcher, start = CoroutineStart.ATOMIC) {
+                workers.removeAll { it.isCompleted }
+                workers.add(scope.launch(dispatcher, start = CoroutineStart.ATOMIC) {
                     var problem = false
                     try {
                         ensureActive()
@@ -135,7 +138,7 @@ internal class LocalVideoScanner(
                     } catch (_: CancellationException) { }
                     catch (_: Exception) { problem = true }
                     finally { withContext(NonCancellable) { events.send(Event.Done(problem)) } }
-                }
+                })
             }
             try {
                 while (active > 0 || pending.isNotEmpty()) {
@@ -168,10 +171,18 @@ internal class LocalVideoScanner(
             } catch (error: Exception) {
                 failed = failed || error !is CancellationException
                 owner.cancel()
-                // Workers may be inside a non-interruptible provider call. Keep
-                // receiving their completions rather than dropping their owner.
+                // Prompt cancellation can lose a Done already handed to select.
+                // Join the actual jobs while draining events: a completion send
+                // can itself be blocked by the bounded channel until we receive.
                 withContext(NonCancellable) {
-                    while (active > 0) if (events.receive() is Event.Done) active--
+                    while (true) {
+                        workers.removeAll { it.isCompleted }
+                        if (workers.isEmpty()) break
+                        select<Unit> {
+                            events.onReceive { }
+                            workers.forEach { worker -> worker.onJoin { } }
+                        }
+                    }
                 }
             } finally {
                 state.value = LocalVideoSnapshot(source.id, generation, published.values.toList(),

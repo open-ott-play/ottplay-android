@@ -29,6 +29,22 @@ class LocalVideoScannerTest {
         override suspend fun readable(source: SourceConfig, document: LocalDocument, owner: LocalVideoOwner) = true
     }
 
+    @Test fun completionDeliveredToCancelledReceiverDoesNotStrandScan() = runTest {
+        val workerScheduler = TestCoroutineScheduler()
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + StandardTestDispatcher(testScheduler))
+        val scan = LocalVideoScanner(scope, StandardTestDispatcher(workerScheduler), Documents()) { _, _, _, _ -> }.start(source, 1)
+        try {
+            runCurrent() // Coordinator suspends waiting for a worker event.
+            workerScheduler.runCurrent() // Done is delivered, but the receiver has not resumed.
+            job.cancel(); runCurrent()
+            assertTrue(job.isCompleted)
+            assertFalse(scan.state.value.scanning)
+            assertTrue(scan.state.value.cancelled)
+            assertFalse(scan.state.value.failed)
+        } finally { job.cancel(); workerScheduler.runCurrent(); runCurrent() }
+    }
+
     @Test fun cancellationRetainsAdmittedWorkerUntilItsDispatcherStarts() = runTest {
         val workerScheduler = TestCoroutineScheduler()
         val job = SupervisorJob()
